@@ -1,0 +1,21 @@
+{
+  "name": "biobabel",
+  "version": "0.1.0",
+  "description": "Bio-Babel agent consumption layer — let agents accurately *use* (Class A: monocle3 pipelines) and *develop on* (Class B: grid_py grammar) Bio-Babel R-to-Python bioinformatics ports. Surfaces 23 MCP tools, 2 slash commands, an R-paste detector hook, and per-package SKILL.md files.",
+  "author": {
+    "name": "Bio-Babel maintainers",
+    "url": "https://github.com/Bio-Babel"
+  },
+  "homepage": "https://github.com/Bio-Babel/bio-babel",
+  "repository": "https://github.com/Bio-Babel/bio-babel",
+  "license": "MIT",
+  "keywords": [
+    "bioinformatics",
+    "single-cell",
+    "ggplot2",
+    "monocle3",
+    "grid",
+    "r-to-python",
+    "mcp"
+  ]
+}

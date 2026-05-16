@@ -1,0 +1,83 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "biobabel"
+version = "0.1.0"
+description = "Agent control plane for Bio-Babel: discover, translate, plan, scaffold, verify R-to-Python bioinformatics ports via MCP."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Bio-Babel maintainers" }]
+keywords = ["bioinformatics", "mcp", "agent", "r-to-python", "ggplot2", "monocle3", "grid"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Typing :: Typed",
+]
+dependencies = [
+    "pydantic>=2.5",
+    "click>=8.1",
+    "pyyaml>=6.0",
+    "tomlkit>=0.13",
+    "jinja2>=3.1",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+verify = ["rpy2>=3.5", "Pillow", "scikit-image"]
+http   = ["uvicorn>=0.27", "starlette>=0.36"]
+dev    = ["pytest>=7", "pytest-cov", "pytest-xdist", "ruff", "mypy", "bandit"]
+
+[project.scripts]
+biobabel     = "biobabel.cli.__main__:main"
+biobabel-mcp = "biobabel.mcp.__main__:main"
+
+[project.urls]
+Homepage   = "https://github.com/Bio-Babel/biobabel"
+Repository = "https://github.com/Bio-Babel/biobabel"
+Issues     = "https://github.com/Bio-Babel/biobabel/issues"
+Docs       = "https://github.com/Bio-Babel/biobabel/tree/main/docs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/biobabel"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/biobabel/data" = "biobabel/data"
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "README.md", "AGENTS.md", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "needs_rpy2: requires the optional rpy2 extra",
+    "needs_grid_py: requires rgrid-python installed",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unused_ignores = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["rpy2.*", "copier.*", "skimage.*"]
+ignore_missing_imports = true

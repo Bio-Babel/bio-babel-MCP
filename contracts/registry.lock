@@ -1,0 +1,28 @@
+lock_version: 1
+generated_at: '2026-05-16T08:30:06+00:00'
+entries:
+- import_name: ggplot2_py
+  distribution: ggplot2-python
+  distribution_version: 4.0.2.9000.post3
+  contract_class: mixed
+  manifest_sha256: ea9b3b2ef720369f172d91cfa294fe8e363e3eb1e24fb3d0236cd9697b2658e9
+- import_name: grid_py
+  distribution: rgrid-python
+  distribution_version: 4.5.3.post3
+  contract_class: grammar
+  manifest_sha256: 7eff9409c639a9e7c33b2e73e4855db7a1127a2fbab0b6ffd8a48edf939fd180
+- import_name: gtable_py
+  distribution: gtable-python
+  distribution_version: 0.3.6.9000.post1
+  contract_class: grammar
+  manifest_sha256: 5c3c8fdaf308d04ff44ba84acac8d50537c4d213b5f097784366bf6999ed00ac
+- import_name: monocle3
+  distribution: monocle3-python
+  distribution_version: 1.4.26
+  contract_class: analysis
+  manifest_sha256: 75ecd8201ccb7e69444d3175afa321979dd637e6588341c778dddb4f5f3a8a95
+- import_name: scales
+  distribution: scales-python
+  distribution_version: 1.4.0.9000
+  contract_class: grammar
+  manifest_sha256: c39fd39dd303d7486852c4f6631fac6d31d44539622a692c9c82952b36eff0ad

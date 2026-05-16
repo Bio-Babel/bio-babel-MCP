@@ -1,0 +1,263 @@
+"""Pydantic v2 models for the biobabel contract.
+
+Schema version 1. Additive-only within v1.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+ContractClass = Literal["analysis", "grammar", "mixed"]
+
+ExtensionKind = Literal[
+    "geom", "stat", "scale", "theme", "operator", "annotation", "facet"
+]
+
+
+class _Frozen(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+class TaskTrigger(_Frozen):
+    intent: str
+    confidence: float = 0.8
+
+
+class RPackageRef(_Frozen):
+    package: str
+    repo: str = ""
+    version_or_commit: str = ""
+    fidelity: Literal["full", "partial", "subset"] = "partial"
+
+
+class Recipe(_Frozen):
+    id: str
+    task_tags: list[str] = Field(default_factory=list)
+    path: str
+    description: str = ""
+    inputs_schema: dict[str, Any] = Field(default_factory=dict)
+    outputs_schema: dict[str, Any] = Field(default_factory=dict)
+    expected_artifacts: list[str] = Field(default_factory=list)
+
+
+# --- Class A: state-machine contract --------------------------------------
+
+
+class Parameter(_Frozen):
+    name: str
+    type: str = ""
+    required: bool = False
+    default: Any = None
+    description: str = ""
+
+
+class FailureFix(_Frozen):
+    when: str
+    suggest: list[str]
+    explanation: str = ""
+
+
+class InternalStep(_Frozen):
+    """For monolithic Class A packages (e.g. copykat, DDRTree)."""
+
+    id: str
+    description: str
+    typical_failures: list[str] = Field(default_factory=list)
+
+
+class ParameterSet(_Frozen):
+    """For huge-parameter functions (e.g. pheatmap, Heatmap)."""
+
+    name: str
+    description: str
+    params: dict[str, Any]
+    recipe: str = ""
+
+
+class FunctionContract(_Frozen):
+    id: str
+    import_path: str
+    execution_class: Literal[
+        "stateless",
+        "adata_mutation",
+        "dataframe_mutation",
+        "builder",
+        "plot",
+    ]
+    intent: list[str] = Field(default_factory=list)
+    description: str = ""
+    parameters: list[Parameter] = Field(default_factory=list)
+    requires: dict[str, Any] = Field(default_factory=dict)
+    writes: dict[str, Any] = Field(default_factory=dict)
+    returns_kind: Literal[
+        "same_object", "new_object", "value", "none", "plot"
+    ] = "value"
+    returns_type: str = ""
+    next: list[str] = Field(default_factory=list)
+    failure_fixes: list[FailureFix] = Field(default_factory=list)
+    examples: list[str] = Field(default_factory=list)
+    tested_on: str = ""
+    internal_steps: list[InternalStep] = Field(default_factory=list)
+    parameter_sets: list[ParameterSet] = Field(default_factory=list)
+
+
+class WorkflowStep(_Frozen):
+    call: str
+    requires: list[str] = Field(default_factory=list)
+    writes: list[str] = Field(default_factory=list)
+    args: dict[str, Any] = Field(default_factory=dict)
+    optional: bool = False
+    description: str = ""
+
+
+class WorkflowContract(_Frozen):
+    id: str
+    description: str
+    intent: list[str] = Field(default_factory=list)
+    inputs: list[dict[str, Any]] = Field(default_factory=list)
+    steps: list[WorkflowStep] = Field(default_factory=list)
+    artifacts: list[dict[str, Any]] = Field(default_factory=list)
+
+
+# --- Class B: grammar contract --------------------------------------------
+
+
+class MentalModel(_Frozen):
+    for_r_users: str = ""
+    for_python_users: str = ""
+    general: str = ""
+
+
+class ConceptSpec(_Frozen):
+    id: str
+    name: str
+    category: str
+    description: str
+    invariants: list[str] = Field(default_factory=list)
+    mental_model: MentalModel
+    related_concepts: list[str] = Field(default_factory=list)
+
+
+class IdiomSpec(_Frozen):
+    id: str
+    name: str
+    applicable_to: list[str] = Field(default_factory=list)
+    description: str
+    code_template: str
+    anti_pattern_paired: str | None = None
+    typical_use_case: str = ""
+
+
+class AntiPatternDetection(_Frozen):
+    ast_pattern: str = ""
+    regex: str = ""
+    static_only: bool = True
+
+    @model_validator(mode="after")
+    def _at_least_one_rule(self) -> AntiPatternDetection:
+        if not self.ast_pattern and not self.regex:
+            raise ValueError(
+                "AntiPatternDetection: must set at least one of ast_pattern / regex"
+            )
+        return self
+
+
+class AntiPatternSpec(_Frozen):
+    id: str
+    name: str
+    applicable_to: list[str] = Field(default_factory=list)
+    detection: AntiPatternDetection
+    why_bad: str = ""
+    correct_pattern: str | None = None
+    code_example_wrong: str = ""
+    code_example_right: str = ""
+
+
+class CompositionSpec(_Frozen):
+    id: str
+    description: str
+    parent: str
+    child: str
+    constraints: list[str] = Field(default_factory=list)
+    typical_errors: list[str] = Field(default_factory=list)
+
+
+# --- Extension support (ggrepel / patchwork / ggalluvial) -----------------
+
+
+class ProvidedExtension(_Frozen):
+    kind: ExtensionKind
+    name: str
+    replaces_or_extends: str = ""
+    behavior_delta: str = ""
+    when_to_use_instead: str = ""
+
+
+class ExtensionRef(_Frozen):
+    pkg: str
+    extension_points: list[ExtensionKind] = Field(default_factory=list)
+    provides: list[ProvidedExtension] = Field(default_factory=list)
+
+
+# --- Top-level manifest ---------------------------------------------------
+
+
+class PackageManifest(_Frozen):
+    schema_version: int = 1
+    repo: str
+    distribution: str
+    import_name: str
+    display_name: str
+    contract_class: ContractClass
+    tier: int = 3
+    type: Literal["overview", "use", "extend", "build-on", "domain"] = "use"
+    maturity: Literal["alpha", "beta", "stable"] = "alpha"
+
+    r_package: RPackageRef | None = None
+    capabilities: list[str] = Field(default_factory=list)
+    domain_tags: list[str] = Field(default_factory=list)
+    task_tags: list[str] = Field(default_factory=list)
+    foundation: list[str] = Field(default_factory=list)
+
+    triggers: list[TaskTrigger] = Field(default_factory=list)
+    not_when: list[str] = Field(default_factory=list)
+
+    # Class A
+    functions: list[FunctionContract] = Field(default_factory=list)
+    workflows: list[WorkflowContract] = Field(default_factory=list)
+
+    # Class B
+    concepts: list[ConceptSpec] = Field(default_factory=list)
+    idioms: list[IdiomSpec] = Field(default_factory=list)
+    anti_patterns: list[AntiPatternSpec] = Field(default_factory=list)
+    compositions: list[CompositionSpec] = Field(default_factory=list)
+
+    # Shared
+    recipes: list[Recipe] = Field(default_factory=list)
+
+    # Extension wiring
+    extends: list[ExtensionRef] = Field(default_factory=list)
+    complements: list[str] = Field(default_factory=list)
+
+    # Provenance
+    package_commit: str = ""
+    last_verified: str = ""
+
+    @model_validator(mode="after")
+    def _class_fields_consistent(self) -> PackageManifest:
+        if self.contract_class == "analysis":
+            if self.concepts or self.idioms or self.anti_patterns or self.compositions:
+                raise ValueError(
+                    "contract_class='analysis' must not declare grammar fields "
+                    "(concepts/idioms/anti_patterns/compositions). "
+                    "Use contract_class='mixed' instead."
+                )
+        elif self.contract_class == "grammar":
+            if self.workflows:
+                raise ValueError(
+                    "contract_class='grammar' must not declare workflows. "
+                    "Use contract_class='mixed' instead."
+                )
+        return self

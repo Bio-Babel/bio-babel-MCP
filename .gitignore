@@ -1,0 +1,41 @@
+# Python build / caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+wheels/
+*.egg
+
+# Test / type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Runtime data the user/agent generates
+~/.biobabel/
+.biobabel/
+
+# Private governance — ADRs + security audit kept locally for the maintainer,
+# not published on the public repo. Reachable on disk; never `git add -f` these.
+docs/governance/

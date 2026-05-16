@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "biobabel": {
+      "command": "biobabel-mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}
