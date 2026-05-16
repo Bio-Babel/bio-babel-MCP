@@ -4,7 +4,7 @@ description: monocle3-python — single-cell trajectory & pseudotime (R Monocle3
 contract_class: analysis
 package_version: 1.4.26
 biobabel_version: 0.1.0
-generated_from_registry_commit: 5905f9548936ffb2bb6a2a18b4803942f68f5c04b5cb33012bd16cc03141643d
+generated_from_registry_commit: 9ca370c4d459b960aaef801a09b394fc6e5b9721454d09195bafe73c954da190
 ---
 
 # monocle3-python

@@ -4,7 +4,7 @@ description: monocle2py — single-cell DDRTree trajectory + BEAM branch analysi
 contract_class: analysis
 package_version: 2.9.0
 biobabel_version: 0.1.0
-generated_from_registry_commit: 298a3b79432d2820e7d48ef152454e69052ac6c9803bef0fdc5bafd8c4c9d6dc
+generated_from_registry_commit: ce602040e2dff8667971ab96b9f115480a942b8221b4e6d851f563967c1dd6e9
 ---
 
 # monocle2py

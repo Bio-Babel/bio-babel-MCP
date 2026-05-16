@@ -4,7 +4,7 @@ description: scales-python — axis transforms, breaks, palettes, formatters (R 
 contract_class: grammar
 package_version: 1.4.0.9000
 biobabel_version: 0.1.0
-generated_from_registry_commit: fe65f5cd4365dfb611b7f0d586b50e915b3531801811d777192fba6fa806808b
+generated_from_registry_commit: 0ad0109db8c240c08e19c3e46a9956ac47d3c14dc70969692b0d09a5a5b2af3b
 ---
 
 # scales-python

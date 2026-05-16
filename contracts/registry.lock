@@ -1,5 +1,5 @@
 lock_version: 1
-generated_at: '2026-05-16T18:45:44+00:00'
+generated_at: '2026-05-16T20:49:21+00:00'
 entries:
 - import_name: ggplot2_py
   distribution: ggplot2-python
@@ -10,24 +10,24 @@ entries:
   distribution: rgrid-python
   distribution_version: 4.5.3.post3
   contract_class: grammar
-  manifest_sha256: 5bd73190af254d3edeb8ee5318b5b007dc6ecb08a1da25f06e721396b1d10421
+  manifest_sha256: 20beb342450a88ef49fbf361988724296d5aa4aaf9787c1d23d54d2c493d390b
 - import_name: gtable_py
   distribution: gtable-python
   distribution_version: 0.3.6.9000.post1
   contract_class: grammar
-  manifest_sha256: 3a27676baf6c788ab7c1187c3543a9827817a611d6450001cc273003017169bf
+  manifest_sha256: c4e3efe28d8c51659134d94e2a80aa8ceadf1617bb5a4f3d121544a907410928
 - import_name: monocle2py
   distribution: monocle2-python
   distribution_version: 2.9.0
   contract_class: analysis
-  manifest_sha256: 298a3b79432d2820e7d48ef152454e69052ac6c9803bef0fdc5bafd8c4c9d6dc
+  manifest_sha256: ce602040e2dff8667971ab96b9f115480a942b8221b4e6d851f563967c1dd6e9
 - import_name: monocle3
   distribution: monocle3-python
   distribution_version: 1.4.26
   contract_class: analysis
-  manifest_sha256: 5905f9548936ffb2bb6a2a18b4803942f68f5c04b5cb33012bd16cc03141643d
+  manifest_sha256: 9ca370c4d459b960aaef801a09b394fc6e5b9721454d09195bafe73c954da190
 - import_name: scales
   distribution: scales-python
   distribution_version: 1.4.0.9000
   contract_class: grammar
-  manifest_sha256: fe65f5cd4365dfb611b7f0d586b50e915b3531801811d777192fba6fa806808b
+  manifest_sha256: 0ad0109db8c240c08e19c3e46a9956ac47d3c14dc70969692b0d09a5a5b2af3b

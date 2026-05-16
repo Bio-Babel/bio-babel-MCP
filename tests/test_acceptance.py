@@ -65,13 +65,17 @@ def test_ac4_monocle3_describe_symbol_full_contract():
 
 @needs_monocle3
 def test_ac_plan_workflow_pseudotime():
-    """plan_workflow('pseudotime trajectory') resolves to monocle3.basic_trajectory with 6 steps."""
+    """plan_workflow('pseudotime trajectory') resolves to monocle3.basic_trajectory and includes the canonical pipeline."""
     server = build_server()
     env = server.call("biobabel.plan_workflow", task="pseudotime trajectory")
     assert env["ok"], env
     assert env["outputs"]["source"] == "workflow_contract"
     assert env["outputs"]["workflow_id"] == "monocle3.basic_trajectory"
-    assert len(env["outputs"]["steps"]) == 6
+    step_calls = [s["call"] for s in env["outputs"]["steps"]]
+    # Canonical pipeline must end with learn_graph -> order_cells in this order.
+    assert "monocle3.learn_graph" in step_calls
+    assert "monocle3.order_cells" in step_calls
+    assert step_calls.index("monocle3.learn_graph") < step_calls.index("monocle3.order_cells")
 
 
 @needs_ggplot2

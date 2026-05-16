@@ -4,7 +4,7 @@ description: gtable-python — grob-table layout primitive (R gtable port)
 contract_class: grammar
 package_version: 0.3.6.9000.post1
 biobabel_version: 0.1.0
-generated_from_registry_commit: 3a27676baf6c788ab7c1187c3543a9827817a611d6450001cc273003017169bf
+generated_from_registry_commit: c4e3efe28d8c51659134d94e2a80aa8ceadf1617bb5a4f3d121544a907410928
 ---
 
 # gtable-python
