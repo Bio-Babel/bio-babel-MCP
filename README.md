@@ -4,8 +4,6 @@
 
 > Agent consumption layer for the [Bio-Babel](https://github.com/Bio-Babel) repositories.
 
-`pip install biobabel`, register the MCP server with your agent IDE, and your agent can accurately use any installed Bio-Babel package via **23 MCP tools** — without guessing R-style Python.
-
 ## Two scenarios it serves
 
 | Scenario | Example ask | What biobabel gives the agent |
@@ -16,7 +14,7 @@
 ## Install
 
 ```bash
-pip install biobabel rgrid-python monocle3-python ggplot2-python
+pip install biobabel monocle3-python ggplot2-python
 biobabel index    # confirms discovery, lists registered packages
 ```
 
@@ -47,12 +45,6 @@ biobabel validate package --pkg <import_name> --strict
 ```
 
 After publishing, agents in any biobabel-wired IDE discover your package automatically (via Python entry points — no central registry).
-
-## What's in the box
-
-- **23 MCP tools** across 6 groups — `list_packages` · `recommend` · `plan_workflow` · `check_prerequisites` · `describe_concept` · `list_idioms` · `check_code` · `run_code` · `run_recipe` · ...
-- **Claude Code plugin** — 2 slash commands (`/biobabel:recommend`, `/biobabel:plan`), 1 R-paste-detector hook, 6 generated skill files
-- **CLI for maintainers and publishers** — `index`, `doctor`, `validate package`, `new contract`, `diff-api`, `build-skills`, `install`, `export-schema`
 
 ## Documentation
 

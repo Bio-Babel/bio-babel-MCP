@@ -8,6 +8,11 @@ from pathlib import Path
 
 import pytest
 
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # Python 3.10 fallback — tomllib is stdlib only from 3.11
+    import tomli as tomllib
+
 from biobabel._retrofit.retrofit import retrofit_package
 
 
@@ -111,7 +116,6 @@ def test_retrofit_patches_pyproject(demo_pkg):
     assert result.ok
     assert result.pyproject_patched is True
 
-    import tomllib
     data = tomllib.loads(pyproject.read_text())
     assert data["tool"]["biobabel"]["contract_class"] == "analysis"
     entry_point = data["project"]["entry-points"]["biobabel.manifest"]["demopkg"]
