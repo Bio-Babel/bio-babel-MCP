@@ -114,7 +114,17 @@ class Session:
 
 
 class SessionStore:
-    """Process-wide session manager."""
+    """Process-wide session manager.
+
+    Sessions are no longer publicly created by the LLM (the
+    ``biobabel.create_session`` MCP tool was removed). Instead, the first
+    runtime tool call without an explicit ``session_id`` triggers
+    :meth:`get_or_create_default`, which lazily creates a single default
+    session per process and reuses it on subsequent calls. Power users
+    that need multiple parallel sessions still get them by calling
+    :meth:`create` directly through internal Python — but the LLM-facing
+    MCP surface no longer exposes session lifecycle as a step.
+    """
 
     def __init__(self, root: Path | None = None, limits: RuntimeLimits | None = None) -> None:
         self._root = root or Path(tempfile.mkdtemp(prefix="biobabel_sessions_"))
@@ -122,6 +132,7 @@ class SessionStore:
         self._sessions: dict[str, Session] = {}
         self._lock = RLock()
         self._limits = limits or RuntimeLimits()
+        self._default_id: str | None = None
 
     @property
     def root(self) -> Path:
@@ -145,14 +156,36 @@ class SessionStore:
             raise KeyError(f"session not found: {session_id}")
         return sess
 
+    def get_or_create_default(self) -> Session:
+        """Return the per-process default session, creating it on first use.
+
+        If a prior default was created and then deleted via :meth:`delete`,
+        the next call here transparently allocates a fresh one rather
+        than raising — that fits the "session is plumbing, never the
+        LLM's problem" stance of the trim.
+        """
+        with self._lock:
+            if self._default_id is not None and self._default_id in self._sessions:
+                return self._sessions[self._default_id]
+            sess = self.create()
+            self._default_id = sess.session_id
+            return sess
+
     def list_sessions(self) -> list[str]:
         return list(self._sessions)
+
+    def iter_sessions(self) -> list[tuple[str, Session]]:
+        """Snapshot of (session_id, Session) pairs for health reporting."""
+        with self._lock:
+            return list(self._sessions.items())
 
     def delete(self, session_id: str) -> None:
         with self._lock:
             sess = self._sessions.pop(session_id, None)
             if sess is not None:
                 shutil.rmtree(sess.workspace, ignore_errors=True)
+            if self._default_id == session_id:
+                self._default_id = None
 
     def shutdown(self) -> None:
         with self._lock:

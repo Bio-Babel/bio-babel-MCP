@@ -1,8 +1,16 @@
-"""biobabel MCP server — wires the 22 tools to a dispatch table.
+"""biobabel MCP server — wires the 20 tools to a dispatch table.
 
 We keep the dispatch decoupled from any specific MCP SDK so the same handlers
 can be smoke-tested in pytest and shipped through stdio / http transports.
 The Anthropic `mcp` SDK is wired in the `transports/stdio.py` adapter.
+
+Surface trim history:
+- 27 → 22: ``biobabel.recommend`` removed; the LLM ranks packages itself
+  from ``list_packages`` triggers/tags/capabilities.
+- 22 → 20: ``biobabel.create_session`` and ``biobabel.list_handles``
+  removed from the public surface as part of the P2-2 + P2-3 bundle.
+  Sessions are now server-side plumbing (lazy default) and current
+  handles are echoed in every runtime tool's ``outputs.active_handles``.
 """
 
 from __future__ import annotations
@@ -21,6 +29,7 @@ from biobabel.mcp.tools import (
     runtime,
     validation,
 )
+from biobabel.mcp.tools.runtime import ProgressEmitter, _noop_progress
 
 ToolHandler = Callable[..., dict[str, Any]]
 
@@ -31,6 +40,17 @@ class ToolSpec:
     group: str
     handler: ToolHandler
     description: str
+    # True for handlers that accept an injected ``progress: ProgressEmitter``
+    # as their first positional argument after the bound dependencies.
+    # Streaming tools (``run_code`` / ``run_recipe``) forward subprocess
+    # output through it as MCP ``notifications/progress``; non-streaming
+    # runtime handlers receive a noop emitter so the signature stays
+    # uniform across the group.
+    streams: bool = False
+    # True for runtime-group handlers that accept ``progress`` as the third
+    # positional. Distinct from ``streams``: every runtime tool wants
+    # ``progress`` injected even though only two actually emit through it.
+    accepts_progress: bool = False
 
 
 class BiobabelMCPServer:
@@ -91,31 +111,33 @@ class BiobabelMCPServer:
                   lambda **kw: validation.check_code(reg, **kw),
                   "Semantic lint: security scan + anti-pattern match")
 
-        # Group 5 — Runtime (8)
-        self._add("biobabel.create_session", "runtime",
-                  lambda **kw: runtime.create_session(sess, **kw),
-                  "Create a new sandboxed session")
-        self._add("biobabel.list_handles", "runtime",
-                  lambda **kw: runtime.list_handles(sess, **kw),
-                  "List handles in a session")
+        # Group 5 — Runtime (6, was 8). All accept ``progress`` injected
+        # by ``call()``. The two streaming members (run_code, run_recipe)
+        # forward subprocess stdout/stderr chunks through it.
         self._add("biobabel.load_adata", "runtime",
-                  lambda **kw: runtime.load_adata(sess, **kw),
-                  "Load an h5ad into an AdataHandle")
+                  lambda progress, **kw: runtime.load_adata(sess, progress, **kw),
+                  "Load an h5ad into an AdataHandle",
+                  accepts_progress=True)
         self._add("biobabel.load_dataframe", "runtime",
-                  lambda **kw: runtime.load_dataframe(sess, **kw),
-                  "Load a CSV/TSV/Parquet into a DfHandle")
+                  lambda progress, **kw: runtime.load_dataframe(sess, progress, **kw),
+                  "Load a CSV/TSV/Parquet into a DfHandle",
+                  accepts_progress=True)
         self._add("biobabel.run_code", "runtime",
-                  lambda **kw: runtime.run_code(reg, sess, **kw),
-                  "Execute Python code in the sandbox")
+                  lambda progress, **kw: runtime.run_code(reg, sess, progress, **kw),
+                  "Execute Python code in the sandbox (streams stdout/stderr)",
+                  accepts_progress=True, streams=True)
         self._add("biobabel.run_recipe", "runtime",
-                  lambda **kw: runtime.run_recipe(reg, sess, **kw),
-                  "Run a registered recipe by id")
+                  lambda progress, **kw: runtime.run_recipe(reg, sess, progress, **kw),
+                  "Run a registered recipe by id (streams stdout/stderr)",
+                  accepts_progress=True, streams=True)
         self._add("biobabel.inspect_object", "runtime",
-                  lambda **kw: runtime.inspect_object(sess, **kw),
-                  "Inspect a slot of an adata handle")
+                  lambda progress, **kw: runtime.inspect_object(sess, progress, **kw),
+                  "Inspect a slot of an adata handle",
+                  accepts_progress=True)
         self._add("biobabel.get_artifact", "runtime",
-                  lambda **kw: runtime.get_artifact(sess, **kw),
-                  "Fetch artifact content + provenance")
+                  lambda progress, **kw: runtime.get_artifact(sess, progress, **kw),
+                  "Fetch artifact content + provenance",
+                  accepts_progress=True)
 
         # Group 6 — Meta (3)
         self._add("biobabel.list_tools", "meta",
@@ -123,13 +145,29 @@ class BiobabelMCPServer:
                   "List all MCP tools")
         self._add("biobabel.health", "meta",
                   lambda **kw: meta.health(reg, sess),
-                  "Registry + session health snapshot")
+                  "Registry + session health snapshot incl. per-session handles")
         self._add("biobabel.list_traces", "meta",
                   lambda **kw: meta.list_traces(sess, **kw),
                   "Recent tool-call traces in a session")
 
-    def _add(self, name: str, group: str, handler: ToolHandler, description: str) -> None:
-        self._tools[name] = ToolSpec(name=name, group=group, handler=handler, description=description)
+    def _add(
+        self,
+        name: str,
+        group: str,
+        handler: ToolHandler,
+        description: str,
+        *,
+        accepts_progress: bool = False,
+        streams: bool = False,
+    ) -> None:
+        self._tools[name] = ToolSpec(
+            name=name,
+            group=group,
+            handler=handler,
+            description=description,
+            accepts_progress=accepts_progress,
+            streams=streams,
+        )
 
     @property
     def tool_count(self) -> int:
@@ -142,11 +180,20 @@ class BiobabelMCPServer:
     def tool(self, name: str) -> ToolSpec:
         return self._tools[name]
 
-    def call(self, name: str, **kwargs: Any) -> dict[str, Any]:
+    def call(
+        self,
+        name: str,
+        *,
+        progress: ProgressEmitter | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
         if name not in self._tools:
             from biobabel.mcp.envelope import error
             return error(name, error_code="unknown_tool", message=f"no tool '{name}'")
-        return self._tools[name].handler(**kwargs)
+        spec = self._tools[name]
+        if spec.accepts_progress:
+            return spec.handler(progress or _noop_progress, **kwargs)
+        return spec.handler(**kwargs)
 
 
 def build_server() -> BiobabelMCPServer:

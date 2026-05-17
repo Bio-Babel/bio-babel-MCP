@@ -40,9 +40,16 @@ class RetrofitResult:
     error: str = ""
 
 
-# Heuristics for execution_class
+# Heuristics for execution_class / contract_class.
+# Producers always review the generated YAML, so these are best-effort
+# defaults — wrong guesses cost a single edit, not a regression.
 _ADATA_NAMES = {"adata", "anndata", "cds"}
 _DF_NAMES = {"df", "dataframe"}
+_PLOT_PREFIXES = ("plot_", "vis_", "draw_")
+# Above this fraction of adata-mutating functions, default contract_class
+# to "analysis". Below, prefer "grammar" if there are enough plot helpers.
+_ANALYSIS_HEURISTIC_RATIO = 0.3
+_GRAMMAR_PLOT_COUNT = 3
 
 
 def retrofit_package(
@@ -160,7 +167,7 @@ def retrofit_package(
 @dataclass
 class SymbolInfo:
     name: str
-    qual_name: str               # e.g. "monocle3_py.preprocess_cds"
+    qual_name: str               # e.g. "<import_name>.<function_name>"
     parameters: list[dict[str, Any]]
     return_annotation: str
     docstring: str
@@ -339,7 +346,7 @@ def _default_repr(default: Any) -> Any:
 
 
 def _guess_execution_class(name: str, params: list[dict[str, Any]]) -> str:
-    if name.startswith(("plot_", "vis_", "draw_")):
+    if name.startswith(_PLOT_PREFIXES):
         return "plot"
     if not params:
         return "stateless"
@@ -353,17 +360,22 @@ def _guess_execution_class(name: str, params: list[dict[str, Any]]) -> str:
 
 
 def _guess_contract_class(symbols: list[SymbolInfo]) -> str:
-    """Heuristic: if >= 30% of functions look like adata_mutation, it's analysis."""
+    """Heuristic from the mix of guessed execution_class values.
+
+    "analysis" wins when adata-mutating functions are common; "grammar"
+    wins when there are enough plot helpers and few adata mutators.
+    "analysis" is the safer default — producer can override with --class.
+    """
     if not symbols:
         return "analysis"
     adata_like = sum(1 for s in symbols if s.execution_class_guess == "adata_mutation")
     plot_like = sum(1 for s in symbols if s.execution_class_guess == "plot")
     ratio = adata_like / len(symbols)
-    if ratio >= 0.3:
+    if ratio >= _ANALYSIS_HEURISTIC_RATIO:
         return "analysis"
-    if plot_like >= 3:
+    if plot_like >= _GRAMMAR_PLOT_COUNT:
         return "grammar"
-    return "analysis"  # safer default; user can override with --class
+    return "analysis"
 
 
 # --- File generation -----------------------------------------------------
@@ -380,7 +392,7 @@ def _build_plan(
 ) -> dict[Path, str]:
     plan: dict[Path, str] = {}
 
-    plan[biobabel_dir / "__init__.py"] = _render_init_py()
+    plan[biobabel_dir / "__init__.py"] = _INIT_PY_TEMPLATE
     plan[biobabel_dir / "package.yaml"] = _render_package_yaml(
         import_name, contract_class, r_package, package_root
     )
@@ -412,50 +424,52 @@ def _build_plan(
     return plan
 
 
-def _render_init_py() -> str:
-    return textwrap.dedent('''\
-        """biobabel manifest factory.
+# Static template — no parameter substitution, so it lives as a module
+# constant rather than a function. The generated _biobabel/__init__.py is
+# byte-identical across all packages.
+_INIT_PY_TEMPLATE = textwrap.dedent('''\
+    """biobabel manifest factory.
 
-        Loads the YAML files in this directory and validates them via Pydantic.
-        Wired into pyproject.toml as the `biobabel.manifest` entry point.
-        """
+    Loads the YAML files in this directory and validates them via Pydantic.
+    Wired into pyproject.toml as the `biobabel.manifest` entry point.
+    """
 
-        from __future__ import annotations
+    from __future__ import annotations
 
-        from pathlib import Path
+    from pathlib import Path
 
-        import yaml
+    import yaml
 
-        from biobabel.manifest_api import PackageManifest
+    from biobabel.manifest_api import PackageManifest
 
-        _HERE = Path(__file__).parent
+    _HERE = Path(__file__).parent
 
 
-        def get_manifest() -> PackageManifest:
-            data = yaml.safe_load((_HERE / "package.yaml").read_text(encoding="utf-8")) or {}
+    def get_manifest() -> PackageManifest:
+        data = yaml.safe_load((_HERE / "package.yaml").read_text(encoding="utf-8")) or {}
 
-            for subdir, field in (
-                ("functions", "functions"),
-                ("workflows", "workflows"),
-                ("concepts", "concepts"),
-                ("idioms", "idioms"),
-                ("anti_patterns", "anti_patterns"),
-                ("compositions", "compositions"),
-            ):
-                items = list(data.get(field, []) or [])
-                for yfile in sorted((_HERE / subdir).glob("*.yaml")):
-                    loaded = yaml.safe_load(yfile.read_text(encoding="utf-8"))
-                    if loaded is None:
-                        continue
-                    if isinstance(loaded, list):
-                        items.extend(loaded)
-                    else:
-                        items.append(loaded)
-                if items:
-                    data[field] = items
+        for subdir, field in (
+            ("functions", "functions"),
+            ("workflows", "workflows"),
+            ("concepts", "concepts"),
+            ("idioms", "idioms"),
+            ("anti_patterns", "anti_patterns"),
+            ("compositions", "compositions"),
+        ):
+            items = list(data.get(field, []) or [])
+            for yfile in sorted((_HERE / subdir).glob("*.yaml")):
+                loaded = yaml.safe_load(yfile.read_text(encoding="utf-8"))
+                if loaded is None:
+                    continue
+                if isinstance(loaded, list):
+                    items.extend(loaded)
+                else:
+                    items.append(loaded)
+            if items:
+                data[field] = items
 
-            return PackageManifest.model_validate(data)
-        ''')
+        return PackageManifest.model_validate(data)
+    ''')
 
 
 def _render_package_yaml(
@@ -562,8 +576,11 @@ def _render_function_yaml(s: SymbolInfo, import_name: str) -> str:
         "intent": [],
         "description": s.docstring.split("\n\n")[0] if s.docstring else "",
         "parameters": s.parameters,
-        "requires": {},
-        "writes": {},
+        # Canonical flat-string shape (see manifest_api._canonicalize_state).
+        # Each entry, once filled, is "<slot>.<key>" (state-presence) or
+        # "X:<semantic>" (adata.X content claim).
+        "requires": [],
+        "writes": [],
         "returns_kind": "value",
         "returns_type": s.return_annotation,
         "next": [],
@@ -582,15 +599,15 @@ def _render_function_yaml(s: SymbolInfo, import_name: str) -> str:
 
 
 def _find_pyproject(package_root: Path) -> Path | None:
+    """Walk up from *package_root* to the filesystem root looking for pyproject.toml."""
     cur = package_root
-    for _ in range(6):
+    while True:
         cand = cur / "pyproject.toml"
         if cand.is_file():
             return cand
         if cur.parent == cur:
-            break
+            return None
         cur = cur.parent
-    return None
 
 
 def _patch_pyproject(path: Path, import_name: str, contract_class: str) -> bool:

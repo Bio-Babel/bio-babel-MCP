@@ -30,7 +30,6 @@ from biobabel.manifest_api import (
     WorkflowStep,
 )
 
-
 # --- In-process detectors used by the grammar manifest's anti_patterns ----
 #
 # In real deployments these would live in rgrid-python's _biobabel/detectors.py
@@ -146,6 +145,12 @@ def grammar_manifest() -> PackageManifest:
 
 @pytest.fixture
 def analysis_manifest() -> PackageManifest:
+    # ``import_name="monocle3_py"`` is deliberately a fictitious alias rather
+    # than the real upstream ``monocle3``. test_skills.py's "skipped because
+    # no skill.md" path relies on ``importlib.util.find_spec(<import_name>)``
+    # returning None; renaming to the real ``monocle3`` would resolve to the
+    # installed package and break that test under any env where monocle3 is
+    # pip-installed.
     return PackageManifest(
         repo="https://github.com/Bio-Babel/Monocle3-python",
         distribution="monocle3-python",
@@ -158,21 +163,24 @@ def analysis_manifest() -> PackageManifest:
         task_tags=["pseudotime", "trajectory"],
         triggers=[TaskTrigger(intent="pseudotime trajectory")],
         functions=[
+            # Canonical flat-string shape (the form producers should adopt).
             FunctionContract(
                 id="monocle3.estimate_size_factors",
                 import_path="monocle3.estimate_size_factors",
                 execution_class="adata_mutation",
                 intent=["pseudotime trajectory"],
                 description="Compute per-cell size factors.",
-                writes={"adata": {"obs": ["Size_Factor"]}},
+                writes=["obs.Size_Factor"],
                 next=["monocle3.preprocess_cds"],
             ),
+            # Exercises the legacy nested-dict absorption path *and* the
+            # X:<semantic> token, so a regression in either is caught here.
             FunctionContract(
                 id="monocle3.preprocess_cds",
                 import_path="monocle3.preprocess_cds",
                 execution_class="adata_mutation",
                 intent=["pseudotime trajectory"],
-                requires={"adata": {"obs": ["Size_Factor"]}},
+                requires={"adata": {"X": "raw_counts", "obs": ["Size_Factor"]}},
                 writes={"adata": {"obsm": ["X_pca"]}},
                 next=["monocle3.reduce_dimension"],
             ),
@@ -181,8 +189,8 @@ def analysis_manifest() -> PackageManifest:
                 import_path="monocle3.reduce_dimension",
                 execution_class="adata_mutation",
                 intent=["pseudotime trajectory"],
-                requires={"adata": {"obsm": ["X_pca"]}},
-                writes={"adata": {"obsm": ["X_umap"]}},
+                requires=["obsm.X_pca"],
+                writes=["obsm.X_umap"],
             ),
         ],
         workflows=[

@@ -8,12 +8,14 @@ Subcommands:
   new contract    — retrofit an existing installed Python package with a _biobabel/
   build-skills    — generate SKILL.md per registered package
   install         — write IDE config for Claude Code / Cursor / Continue / OpenAI
+  uninstall       — remove biobabel from a previously-installed IDE config
   export-schema   — emit the manifest.v1 JSON Schema
 """
 
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import click
@@ -217,6 +219,38 @@ def cmd_install(target: str, workspace: str) -> None:
     written = install(target, Path(workspace))
     for p in written:
         console.print(f"[green]+[/green] {p}")
+
+
+@main_cli.command("uninstall")
+@click.option("--target",
+              type=click.Choice(["claude_code", "cursor", "continue", "openai", "all"]),
+              required=True)
+@click.option("--workspace", type=click.Path(), default=".",
+              help="Workspace path for per-project files (cursor rules, openai files).")
+@click.option("--dry-run/--no-dry-run", default=False,
+              help="Show what would be removed without modifying files.")
+@click.option("--force/--no-force", default=False,
+              help="Remove workspace artefacts even if their content has been modified.")
+def cmd_uninstall(target: str, workspace: str, dry_run: bool, force: bool) -> None:
+    """Remove the biobabel entry from the chosen IDE's MCP config.
+
+    Symmetric to ``biobabel install``. Workspace artefacts (cursor rule,
+    openai tools/prompt) are preserved if they have been modified relative
+    to what install would write today; pass --force to remove them anyway.
+    """
+    from biobabel._exporters.installer import uninstall
+    report = uninstall(target, Path(workspace), dry_run=dry_run, force=force)
+    for line in report.actions:
+        if line.startswith("DRY RUN"):
+            console.print(f"[yellow]{line}[/yellow]")
+        elif line.startswith("+"):
+            console.print(f"[green]{line}[/green]")
+        elif line.startswith("~"):
+            console.print(f"[yellow]{line}[/yellow]")
+        else:
+            console.print(f"[dim]{line}[/dim]")
+    if not report.actions:
+        console.print("[dim](no actions)[/dim]")
 
 
 def main(argv: list[str] | None = None) -> int:

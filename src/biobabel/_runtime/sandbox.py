@@ -10,8 +10,10 @@ In scope:
   open file descriptors. Linux: bound. macOS: best-effort (RLIMIT_AS does
   not bind RSS — surfaced as a startup warning).
 - cwd = session workspace; relative writes land there.
-- timeout enforced via subprocess.Popen.communicate.
-- stdout/stderr captured and truncated.
+- Wall-clock timeout enforced by a deadline-driven read loop (not by the
+  old ``Popen.communicate(timeout=...)``); the loop reads stdout/stderr
+  line-by-line so callers that pass ``on_progress`` see output as it arrives.
+- stdout/stderr captured and truncated at ``limits.max_stdout_kb``.
 
 Out of scope (by design — would require real isolation: nsjail / firejail /
 bubblewrap, all OS-specific):
@@ -29,16 +31,36 @@ import hashlib
 import os
 import platform
 import resource
+import selectors
 import subprocess
 import sys
 import textwrap
 import time
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 from biobabel._runtime.limits import RuntimeLimits
 from biobabel._runtime.policy import CodeScanResult, scan_code
+
+
+@dataclass(frozen=True)
+class StreamChunk:
+    """One stdout or stderr fragment from a running sandbox subprocess.
+
+    Emitted by ``run_code`` on line boundaries when an ``on_progress``
+    callback is provided. The MCP transport translates each chunk into a
+    ``notifications/progress`` event; non-streaming callers (tests,
+    in-process probes) pass ``on_progress=None`` and never see chunks.
+    """
+
+    stream: Literal["stdout", "stderr"]
+    text: str
+
+
+ProgressCallback = Callable[[StreamChunk], None]
 
 
 @dataclass
@@ -159,10 +181,16 @@ def run_code(
     limits: RuntimeLimits | None = None,
     timeout_s: int | None = None,
     extra_allow_imports: list[str] | None = None,
+    on_progress: ProgressCallback | None = None,
 ) -> SandboxResult:
     """Execute *code* in a guarded subprocess.
 
     Not a security boundary — see this module's docstring.
+
+    When ``on_progress`` is provided, stdout/stderr are emitted as
+    :class:`StreamChunk` objects on every newline boundary while the
+    subprocess runs. The final :class:`SandboxResult` still contains the
+    full captured streams; ``on_progress`` is purely additive.
     """
     _ensure_rlimit_support()
     limits = limits or RuntimeLimits()
@@ -188,29 +216,30 @@ def run_code(
     env = _filter_env()
     env["MPLBACKEND"] = "Agg"
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    # PYTHONUNBUFFERED + ``-u`` together force the child's stdout/stderr to
+    # be unbuffered, so ``print()`` reaches the parent pipe immediately
+    # instead of being held by the child's stdio block buffer until exit.
+    # Without this, line-by-line streaming would only fire at process end.
+    env["PYTHONUNBUFFERED"] = "1"
 
     wrapper = _wrap(code, workspace)
-
     preexec = _make_rlimit_preexec(limits) if os.name == "posix" else None
 
     start = time.perf_counter()
-    timed_out = False
     try:
         proc = subprocess.Popen(
-            [sys.executable, "-c", wrapper],
+            [sys.executable, "-u", "-c", wrapper],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=str(workspace),
             env=env,
             preexec_fn=preexec,
+            # Default bufsize=-1 gives a BufferedReader on .stdout/.stderr,
+            # which supports .read1() (non-blocking up-to-N read). The
+            # child's stdio is unbuffered via ``-u`` + PYTHONUNBUFFERED, so
+            # the parent-side buffering here doesn't delay arrival of
+            # written bytes — it only smooths small reads.
         )
-        try:
-            stdout_b, stderr_b = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            proc.kill()
-            stdout_b, stderr_b = proc.communicate()
-        return_code = proc.returncode
     except OSError as exc:
         elapsed = (time.perf_counter() - start) * 1000
         return SandboxResult(
@@ -224,10 +253,17 @@ def run_code(
             error_code="sandbox_launch_failed",
         )
 
+    stdout_bytes, stderr_bytes, timed_out = _stream_until_exit(
+        proc,
+        deadline=start + timeout,
+        on_progress=on_progress,
+    )
+    return_code = proc.returncode if proc.returncode is not None else -1
+
     duration_ms = (time.perf_counter() - start) * 1000
     max_chars = limits.max_stdout_kb * 1024
-    stdout = stdout_b.decode("utf-8", errors="replace")[:max_chars]
-    stderr = stderr_b.decode("utf-8", errors="replace")[:max_chars]
+    stdout = stdout_bytes.decode("utf-8", errors="replace")[:max_chars]
+    stderr = stderr_bytes.decode("utf-8", errors="replace")[:max_chars]
 
     new_files = sorted(
         {p for p in workspace.rglob("*") if p.is_file()} - pre_files
@@ -252,3 +288,114 @@ def run_code(
         code_hash=code_hash,
         error_code=error_code,
     )
+
+
+def _stream_until_exit(
+    proc: subprocess.Popen[bytes],
+    *,
+    deadline: float,
+    on_progress: ProgressCallback | None,
+) -> tuple[bytes, bytes, bool]:
+    """Drive a non-blocking read loop over the child's stdout+stderr pipes.
+
+    Returns ``(stdout, stderr, timed_out)``. When ``on_progress`` is given,
+    every completed line (terminated by ``\\n``) is emitted as a
+    :class:`StreamChunk` as soon as it arrives. The trailing unterminated
+    fragment, if any, is emitted at end-of-stream so partial last lines
+    are not silently dropped.
+
+    Timeout handling: when ``time.perf_counter()`` exceeds ``deadline``,
+    the child is killed and the pipes drained to capture whatever was
+    emitted before death. ``timed_out=True`` is returned in that case.
+    """
+    stdout_chunks: list[bytes] = []
+    stderr_chunks: list[bytes] = []
+    stdout_remainder = b""
+    stderr_remainder = b""
+    timed_out = False
+
+    assert proc.stdout is not None and proc.stderr is not None
+    sel = selectors.DefaultSelector()
+    sel.register(proc.stdout, selectors.EVENT_READ, data="stdout")
+    sel.register(proc.stderr, selectors.EVENT_READ, data="stderr")
+
+    try:
+        while sel.get_map():
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                timed_out = True
+                proc.kill()
+                break
+
+            # Poll quanta: 200ms is short enough to keep the timeout check
+            # responsive without busy-looping when the child is silent.
+            wait = min(remaining, 0.2)
+            events = sel.select(timeout=wait)
+            if not events:
+                if proc.poll() is not None:
+                    # Child exited and the selectors loop saw no more data
+                    # this quantum. Pipes may still hold buffered bytes —
+                    # the post-loop drain (below) picks them up.
+                    break
+                continue
+
+            for key, _ in events:
+                stream_name: str = key.data
+                fd = key.fileobj
+                # read1 returns whatever is buffered without blocking for
+                # more; an empty bytes object means EOF on that pipe.
+                chunk = fd.read1(65536)  # type: ignore[union-attr]
+                if not chunk:
+                    sel.unregister(fd)
+                    continue
+                if stream_name == "stdout":
+                    stdout_chunks.append(chunk)
+                    stdout_remainder = _emit_lines(
+                        stdout_remainder + chunk, "stdout", on_progress
+                    )
+                else:
+                    stderr_chunks.append(chunk)
+                    stderr_remainder = _emit_lines(
+                        stderr_remainder + chunk, "stderr", on_progress
+                    )
+    finally:
+        sel.close()
+
+    # Final drain: read any bytes that landed in the pipes between the loop
+    # exit and now (common after a normal exit; mandatory after a kill).
+    rest_out, rest_err = proc.communicate()
+    if rest_out:
+        stdout_chunks.append(rest_out)
+        stdout_remainder = _emit_lines(stdout_remainder + rest_out, "stdout", on_progress)
+    if rest_err:
+        stderr_chunks.append(rest_err)
+        stderr_remainder = _emit_lines(stderr_remainder + rest_err, "stderr", on_progress)
+
+    # Flush trailing un-newline-terminated tail so partial last lines reach
+    # the LLM rather than being dropped.
+    if on_progress is not None:
+        if stdout_remainder:
+            on_progress(StreamChunk("stdout", stdout_remainder.decode("utf-8", errors="replace")))
+        if stderr_remainder:
+            on_progress(StreamChunk("stderr", stderr_remainder.decode("utf-8", errors="replace")))
+
+    return b"".join(stdout_chunks), b"".join(stderr_chunks), timed_out
+
+
+def _emit_lines(
+    buf: bytes, stream: Literal["stdout", "stderr"], on_progress: ProgressCallback | None
+) -> bytes:
+    """Split *buf* on newlines, emit each complete line, return the trailing
+    un-terminated remainder.
+
+    When ``on_progress`` is None this is a pure split — the remainder is
+    still returned so the caller can flush it at EOF.
+    """
+    if b"\n" not in buf:
+        return buf
+    parts = buf.split(b"\n")
+    if on_progress is not None:
+        for line in parts[:-1]:
+            text = (line + b"\n").decode("utf-8", errors="replace")
+            on_progress(StreamChunk(stream, text))
+    return parts[-1]

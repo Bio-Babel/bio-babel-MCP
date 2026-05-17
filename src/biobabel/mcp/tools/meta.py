@@ -21,12 +21,20 @@ def health(registry: Registry, sessions: SessionStore) -> dict[str, Any]:
     warnings: list[str] = []
     for err in registry.errors:
         warnings.append(f"[{err.kind}] {err.name} ({err.distribution}): {err.error}")
+    handles_by_session: dict[str, dict[str, list[str]]] = {
+        sid: sess.list_handles() for sid, sess in sessions.iter_sessions()
+    }
     return success(
         "biobabel.health",
-        summary=f"{len(registry.packages)} packages, {len(sessions.list_sessions())} sessions, {len(warnings)} discovery warning(s)",
+        summary=(
+            f"{len(registry.packages)} packages, "
+            f"{len(handles_by_session)} sessions, "
+            f"{len(warnings)} discovery warning(s)"
+        ),
         outputs={
             "packages": len(registry.packages),
-            "sessions": len(sessions.list_sessions()),
+            "sessions": len(handles_by_session),
+            "handles_by_session": handles_by_session,
             "discovery_errors": [err.__dict__ for err in registry.errors],
         },
         warnings=warnings,

@@ -48,12 +48,25 @@ class DiscoveredDetector:
 
 @dataclass(frozen=True)
 class DiscoveryError:
-    """A failed discovery attempt — entry point existed but couldn't be loaded."""
+    """A failed discovery or registration attempt.
 
-    name: str                   # import_name OR detector_id
+    Three failure modes share this record type so the health tool can
+    surface them uniformly:
+
+    - ``kind="manifest"``  — entry point existed but the manifest factory
+                              failed to load or returned the wrong type.
+    - ``kind="detector"``  — same for a detector entry point.
+    - ``kind="duplicate"`` — two distributions tried to register the same
+                              identifier (package import_name, function id,
+                              concept id, idiom id, anti-pattern id, workflow
+                              id, or detector id). The first registration
+                              keeps the slot; the second is skipped.
+    """
+
+    name: str                   # import_name OR detector_id OR colliding id
     distribution: str
     error: str
-    kind: str = "manifest"      # "manifest" | "detector"
+    kind: str = "manifest"      # "manifest" | "detector" | "duplicate"
 
 
 def discover() -> tuple[list[DiscoveredManifest], list[DiscoveryError]]:

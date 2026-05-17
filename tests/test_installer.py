@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from biobabel._exporters.installer import install
+from biobabel._exporters.installer import install, uninstall
 
 
 @pytest.fixture
@@ -121,3 +121,191 @@ def test_all_target_installs_all_three(ide_homes, tmp_path):
 def test_unknown_target_raises():
     with pytest.raises(ValueError, match="unknown target"):
         install("zed_editor", workspace=Path("/tmp/wsX"))
+
+
+# --- Uninstall coverage ----------------------------------------------------
+#
+# Each install path has a symmetric uninstall path. The tests below verify:
+# - the biobabel entry is removed
+# - the user's other keys/servers/files are NOT removed
+# - re-running uninstall on a clean state is a no-op (not an error)
+# - workspace artefacts (cursor rule, openai files) are preserved when
+#   user-modified, removed under --force
+# - dry-run produces the same report without touching disk
+
+
+def test_uninstall_claude_code_removes_biobabel_key(ide_homes):
+    install("claude_code", workspace=Path("/tmp/wsX"))
+    report = uninstall("claude_code", workspace=Path("/tmp/wsX"))
+    settings = json.loads((ide_homes["claude"] / "settings.json").read_text())
+    assert "biobabel" not in settings.get("mcpServers", {})
+    assert len(report.removed) == 1
+
+
+def test_uninstall_claude_code_preserves_other_servers_and_keys(ide_homes):
+    home = ide_homes["claude"]
+    home.mkdir()
+    (home / "settings.json").write_text(
+        json.dumps({
+            "mcpServers": {
+                "other": {"command": "other-mcp"},
+                "biobabel": {"command": "biobabel-mcp"},
+            },
+            "theme": "dark",
+        })
+    )
+    uninstall("claude_code", workspace=Path("/tmp/wsX"))
+    settings = json.loads((home / "settings.json").read_text())
+    assert "biobabel" not in settings["mcpServers"]
+    assert "other" in settings["mcpServers"]
+    assert settings["theme"] == "dark"
+
+
+def test_uninstall_claude_code_idempotent_on_fresh_state(ide_homes):
+    """Uninstall on a never-installed env reports not_found rather than crashing."""
+    report = uninstall("claude_code", workspace=Path("/tmp/wsX"))
+    assert report.removed == []
+    assert len(report.not_found) == 1
+
+
+def test_uninstall_cursor_removes_global_config_and_unmodified_rule(ide_homes, tmp_path):
+    ws = tmp_path / "myproj"
+    ws.mkdir()
+    install("cursor", workspace=ws)
+    rule = ws / ".cursor" / "rules" / "biobabel.md"
+    assert rule.is_file()
+
+    uninstall("cursor", workspace=ws)
+
+    mcp = json.loads((ide_homes["cursor"] / "mcp.json").read_text())
+    assert "biobabel" not in mcp.get("mcpServers", {})
+    assert not rule.exists()
+
+
+def test_uninstall_cursor_preserves_user_modified_rule(ide_homes, tmp_path):
+    """If the user appended their own notes to the rule file, uninstall must
+    NOT silently delete their edits. They get a kept_modified report entry."""
+    ws = tmp_path / "myproj"
+    ws.mkdir()
+    install("cursor", workspace=ws)
+    rule = ws / ".cursor" / "rules" / "biobabel.md"
+    rule.write_text(rule.read_text() + "\n\n# my custom rules\n")
+
+    report = uninstall("cursor", workspace=ws)
+
+    assert rule.exists()
+    assert "my custom rules" in rule.read_text()
+    assert rule in report.kept_modified
+
+
+def test_uninstall_cursor_force_removes_modified_rule(ide_homes, tmp_path):
+    ws = tmp_path / "myproj"
+    ws.mkdir()
+    install("cursor", workspace=ws)
+    rule = ws / ".cursor" / "rules" / "biobabel.md"
+    rule.write_text("MODIFIED")
+
+    uninstall("cursor", workspace=ws, force=True)
+
+    assert not rule.exists()
+
+
+def test_uninstall_continue_removes_biobabel_entry(ide_homes):
+    install("continue", workspace=Path("/tmp/wsX"))
+    uninstall("continue", workspace=Path("/tmp/wsX"))
+    config = yaml.safe_load((ide_homes["continue"] / "config.yaml").read_text())
+    entries = [s for s in config.get("mcpServers", []) if s.get("name") == "biobabel"]
+    assert entries == []
+
+
+def test_uninstall_continue_preserves_other_entries_and_top_level_keys(ide_homes):
+    home = ide_homes["continue"]
+    home.mkdir()
+    (home / "config.yaml").write_text(yaml.safe_dump({
+        "models": [{"name": "claude"}],
+        "mcpServers": [
+            {"name": "biobabel", "command": "biobabel-mcp"},
+            {"name": "other-mcp", "command": "other"},
+        ],
+    }))
+    uninstall("continue", workspace=Path("/tmp/wsX"))
+    config = yaml.safe_load((home / "config.yaml").read_text())
+    names = {s["name"] for s in config["mcpServers"]}
+    assert names == {"other-mcp"}
+    assert config["models"] == [{"name": "claude"}]
+
+
+def test_uninstall_continue_tolerates_malformed_mcp_servers_field(ide_homes):
+    """Install rejects a malformed field; uninstall must NOT rewrite a file
+    whose shape it doesn't recognize — instead it reports not_found and exits
+    cleanly so the user can investigate."""
+    home = ide_homes["continue"]
+    home.mkdir()
+    (home / "config.yaml").write_text(yaml.safe_dump({
+        "mcpServers": "this should have been a list",
+    }))
+    report = uninstall("continue", workspace=Path("/tmp/wsX"))
+    assert report.removed == []
+    assert (home / "config.yaml") in report.not_found
+    # The malformed file is untouched.
+    assert yaml.safe_load((home / "config.yaml").read_text())["mcpServers"] == \
+        "this should have been a list"
+
+
+def test_uninstall_openai_removes_unmodified_workspace_files(tmp_path):
+    ws = tmp_path / "wsX"
+    ws.mkdir()
+    install("openai", workspace=ws)
+    uninstall("openai", workspace=ws)
+    assert not (ws / "biobabel.tools.json").exists()
+    assert not (ws / "biobabel.system_prompt.md").exists()
+
+
+def test_uninstall_openai_preserves_modified_prompt(tmp_path):
+    ws = tmp_path / "wsX"
+    ws.mkdir()
+    install("openai", workspace=ws)
+    (ws / "biobabel.system_prompt.md").write_text("EDITED BY USER")
+    report = uninstall("openai", workspace=ws)
+    assert (ws / "biobabel.system_prompt.md").exists()
+    # tools.json is unmodified → still removed
+    assert not (ws / "biobabel.tools.json").exists()
+    assert (ws / "biobabel.system_prompt.md") in report.kept_modified
+
+
+def test_uninstall_all_runs_three_ide_targets_and_skips_openai(ide_homes, tmp_path):
+    """Symmetric with install("all", ...) — IDE targets, openai opt-in."""
+    ws = tmp_path / "wsX"
+    ws.mkdir()
+    install("all", workspace=ws)
+    install("openai", workspace=ws)   # opt-in install, should NOT be undone by uninstall("all", ...)
+
+    uninstall("all", workspace=ws)
+
+    # IDE configs cleaned
+    settings = json.loads((ide_homes["claude"] / "settings.json").read_text())
+    assert "biobabel" not in settings.get("mcpServers", {})
+    cursor_cfg = json.loads((ide_homes["cursor"] / "mcp.json").read_text())
+    assert "biobabel" not in cursor_cfg.get("mcpServers", {})
+    cont_cfg = yaml.safe_load((ide_homes["continue"] / "config.yaml").read_text())
+    assert [s for s in cont_cfg.get("mcpServers", []) if s.get("name") == "biobabel"] == []
+
+    # openai workspace files NOT cleaned (target opted out)
+    assert (ws / "biobabel.tools.json").exists()
+    assert (ws / "biobabel.system_prompt.md").exists()
+
+
+def test_uninstall_dry_run_does_not_modify_files(ide_homes):
+    install("claude_code", workspace=Path("/tmp/wsX"))
+    before = (ide_homes["claude"] / "settings.json").read_text()
+    report = uninstall("claude_code", workspace=Path("/tmp/wsX"), dry_run=True)
+    after = (ide_homes["claude"] / "settings.json").read_text()
+    assert before == after
+    # report still describes what WOULD have happened
+    assert len(report.removed) == 1
+    assert any("DRY RUN" in line for line in report.actions)
+
+
+def test_uninstall_unknown_target_raises():
+    with pytest.raises(ValueError, match="unknown target"):
+        uninstall("zed_editor", workspace=Path("/tmp/wsX"))

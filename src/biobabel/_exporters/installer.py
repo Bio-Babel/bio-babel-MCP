@@ -67,12 +67,27 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
 
 MCP_SERVER_KEY = "biobabel"
 MCP_SERVER_COMMAND = "biobabel-mcp"
+
+# Canonical content of the workspace artefacts. Both install (which writes
+# them) and uninstall (which decides whether they have been user-modified
+# and therefore must be preserved) reference these same constants so the
+# two stay coupled.
+_OPENAI_TOOLS_PAYLOAD: dict[str, str] = {
+    "tools_endpoint": "biobabel-mcp via stdio",
+    "transport": "stdio",
+    "note": "Bridge through any MCP→OpenAI tool adapter.",
+}
+
+
+def _openai_tools_text() -> str:
+    return json.dumps(_OPENAI_TOOLS_PAYLOAD, indent=2)
 
 
 def install(target: str, workspace: Path) -> list[Path]:
@@ -151,17 +166,7 @@ def _install_continue() -> list[Path]:
 
 def _install_openai(workspace: Path) -> list[Path]:
     tools_path = workspace / "biobabel.tools.json"
-    tools_path.write_text(
-        json.dumps(
-            {
-                "tools_endpoint": "biobabel-mcp via stdio",
-                "transport": "stdio",
-                "note": "Bridge through any MCP→OpenAI tool adapter.",
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    tools_path.write_text(_openai_tools_text(), encoding="utf-8")
     prompt_path = workspace / "biobabel.system_prompt.md"
     prompt_path.write_text(_BIOBABEL_RULE, encoding="utf-8")
     return [tools_path, prompt_path]
@@ -194,6 +199,217 @@ def _read_yaml(path: Path) -> dict:
 def _write_yaml(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
+
+
+# --- Rule text used by Cursor + openai prompt ----------------------------
+
+
+# --- Uninstall ------------------------------------------------------------
+#
+# Symmetric inverse of ``install``. Two safety properties beyond what install
+# guarantees:
+#
+# 1. ``--dry-run`` shows what would be removed without touching files.
+# 2. Workspace artefacts (cursor's rule file, openai's tools+prompt files)
+#    are preserved when their content has diverged from what install would
+#    write today. ``--force`` overrides this and removes them anyway.
+#
+# We never reach into a config file to remove keys we didn't put there:
+# only the ``mcpServers.biobabel`` entry is touched. If removing it leaves
+# ``mcpServers`` empty, the empty container is kept — minimum-mutation
+# principle. The user's other settings, tools, and YAML keys stay untouched.
+
+
+@dataclass
+class UninstallReport:
+    """What ``uninstall`` did or would have done.
+
+    ``actions`` is a human-readable log used by the CLI. The three structured
+    lists let callers and tests reason about each outcome class precisely.
+    """
+
+    actions: list[str] = field(default_factory=list)
+    removed: list[Path] = field(default_factory=list)
+    kept_modified: list[Path] = field(default_factory=list)
+    not_found: list[Path] = field(default_factory=list)
+
+    def extend(self, other: UninstallReport) -> None:
+        self.actions.extend(other.actions)
+        self.removed.extend(other.removed)
+        self.kept_modified.extend(other.kept_modified)
+        self.not_found.extend(other.not_found)
+
+
+def uninstall(
+    target: str,
+    workspace: Path,
+    *,
+    dry_run: bool = False,
+    force: bool = False,
+) -> UninstallReport:
+    workspace = workspace.resolve()
+    if target == "all":
+        report = UninstallReport()
+        # Mirrors install("all", ...) — IDE targets only; openai is opt-in.
+        report.extend(uninstall("claude_code", workspace, dry_run=dry_run, force=force))
+        report.extend(uninstall("cursor", workspace, dry_run=dry_run, force=force))
+        report.extend(uninstall("continue", workspace, dry_run=dry_run, force=force))
+        return report
+    if target == "claude_code":
+        return _uninstall_claude_code(dry_run=dry_run)
+    if target == "cursor":
+        return _uninstall_cursor(workspace, dry_run=dry_run, force=force)
+    if target == "continue":
+        return _uninstall_continue(dry_run=dry_run)
+    if target == "openai":
+        return _uninstall_openai(workspace, dry_run=dry_run, force=force)
+    raise ValueError(f"unknown target: {target}")
+
+
+def _uninstall_claude_code(*, dry_run: bool) -> UninstallReport:
+    home = Path(os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude")))
+    settings_path = home / "settings.json"
+    return _remove_mcp_dict_key(settings_path, dry_run=dry_run, reader=_read_json, writer=_write_json)
+
+
+def _uninstall_cursor(workspace: Path, *, dry_run: bool, force: bool) -> UninstallReport:
+    home = Path(os.environ.get("CURSOR_HOME", str(Path.home() / ".cursor")))
+    mcp_path = home / "mcp.json"
+    report = _remove_mcp_dict_key(
+        mcp_path, dry_run=dry_run, reader=_read_json, writer=_write_json
+    )
+    rule_path = workspace / ".cursor" / "rules" / "biobabel.md"
+    _remove_workspace_file(
+        rule_path,
+        expected_text=_BIOBABEL_RULE,
+        report=report,
+        dry_run=dry_run,
+        force=force,
+    )
+    return report
+
+
+def _uninstall_continue(*, dry_run: bool) -> UninstallReport:
+    home = Path(os.environ.get("CONTINUE_HOME", str(Path.home() / ".continue")))
+    config_path = home / "config.yaml"
+    report = UninstallReport()
+    if not config_path.is_file():
+        report.not_found.append(config_path)
+        report.actions.append(f"· {config_path} (not found)")
+        return report
+    config = _read_yaml(config_path)
+    servers = config.get("mcpServers")
+    if not isinstance(servers, list):
+        # Either missing or schema-divergent. Safe stance: report and skip,
+        # don't rewrite a file whose shape we don't recognize.
+        report.not_found.append(config_path)
+        report.actions.append(
+            f"· {config_path} (no 'mcpServers' list — biobabel not registered)"
+        )
+        return report
+    new_servers = [
+        s for s in servers
+        if not (isinstance(s, dict) and s.get("name") == MCP_SERVER_KEY)
+    ]
+    if len(new_servers) == len(servers):
+        report.not_found.append(config_path)
+        report.actions.append(f"· {config_path} (no biobabel entry to remove)")
+        return report
+    config["mcpServers"] = new_servers
+    if not dry_run:
+        _write_yaml(config_path, config)
+    report.removed.append(config_path)
+    report.actions.append(
+        f"{'DRY RUN — would remove' if dry_run else '+'} {config_path}"
+        f" (mcpServers entry name='biobabel')"
+    )
+    return report
+
+
+def _uninstall_openai(workspace: Path, *, dry_run: bool, force: bool) -> UninstallReport:
+    report = UninstallReport()
+    _remove_workspace_file(
+        workspace / "biobabel.tools.json",
+        expected_text=_openai_tools_text(),
+        report=report,
+        dry_run=dry_run,
+        force=force,
+    )
+    _remove_workspace_file(
+        workspace / "biobabel.system_prompt.md",
+        expected_text=_BIOBABEL_RULE,
+        report=report,
+        dry_run=dry_run,
+        force=force,
+    )
+    return report
+
+
+def _remove_mcp_dict_key(
+    config_path: Path,
+    *,
+    dry_run: bool,
+    reader,  # type: ignore[no-untyped-def]
+    writer,  # type: ignore[no-untyped-def]
+) -> UninstallReport:
+    """Remove ``mcpServers.biobabel`` from a JSON-style config file."""
+    report = UninstallReport()
+    if not config_path.is_file():
+        report.not_found.append(config_path)
+        report.actions.append(f"· {config_path} (not found)")
+        return report
+    config = reader(config_path)
+    servers = config.get("mcpServers")
+    if not isinstance(servers, dict) or MCP_SERVER_KEY not in servers:
+        report.not_found.append(config_path)
+        report.actions.append(
+            f"· {config_path} (no mcpServers.{MCP_SERVER_KEY} to remove)"
+        )
+        return report
+    del servers[MCP_SERVER_KEY]
+    if not dry_run:
+        writer(config_path, config)
+    report.removed.append(config_path)
+    report.actions.append(
+        f"{'DRY RUN — would remove' if dry_run else '+'} "
+        f"{config_path} (mcpServers.{MCP_SERVER_KEY})"
+    )
+    return report
+
+
+def _remove_workspace_file(
+    path: Path,
+    *,
+    expected_text: str,
+    report: UninstallReport,
+    dry_run: bool,
+    force: bool,
+) -> None:
+    """Delete a workspace artefact, but only if its content is unchanged.
+
+    The "unchanged" test compares against what install would write today.
+    A version skew between the recorded constant and the installed file
+    therefore looks like a user modification — that false-positive errs on
+    the side of preserving user data; ``--force`` overrides it.
+    """
+    if not path.is_file():
+        report.not_found.append(path)
+        report.actions.append(f"· {path} (not found)")
+        return
+    current = path.read_text(encoding="utf-8")
+    if current != expected_text and not force:
+        report.kept_modified.append(path)
+        report.actions.append(
+            f"~ {path} (kept — content modified; use --force to remove anyway)"
+        )
+        return
+    if not dry_run:
+        path.unlink()
+    report.removed.append(path)
+    report.actions.append(
+        f"{'DRY RUN — would remove' if dry_run else '+'} {path}"
+        + (" (modified, removed via --force)" if current != expected_text else "")
+    )
 
 
 # --- Rule text used by Cursor + openai prompt ----------------------------

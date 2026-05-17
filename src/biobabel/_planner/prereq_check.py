@@ -33,31 +33,22 @@ def check_prerequisites(
     for key in adata.layers:
         present.add(f"layers.{key}")
 
-    missing = [r for r in step.requires if r not in present]
+    # X:<semantic> tokens are advisory in this layer: biobabel cannot verify
+    # adata.X content from the handle alone (the handle stores slot keys, not
+    # X dtype). They are filtered out of the state-presence check rather than
+    # always reported as missing — see roadmap P0-1 for the rationale.
+    missing = [
+        r for r in step.requires
+        if not r.startswith("X:") and r not in present
+    ]
     if not missing:
         return PrereqResult(satisfied=True)
 
-    # Look up fix suggestions by inspecting any function that writes the missing slot.
     fixes: list[str] = []
     for slot in missing:
         for _, fn in registry._function_by_id.values():
-            writes = _flatten_state(fn.writes)
-            if slot in writes:
+            if slot in fn.writes:
                 fixes.append(fn.id)
                 break
 
     return PrereqResult(satisfied=False, missing=missing, fix_suggestions=fixes)
-
-
-def _flatten_state(d: dict) -> list[str]:
-    out: list[str] = []
-    if not isinstance(d, dict):
-        return out
-    inner = d.get("adata") or d.get("df") or d
-    if isinstance(inner, dict):
-        for slot, keys in inner.items():
-            if isinstance(keys, list):
-                out.extend(f"{slot}.{k}" for k in keys)
-            elif isinstance(keys, str):
-                out.append(f"{slot}.{keys}")
-    return out
