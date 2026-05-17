@@ -223,7 +223,7 @@ class ExtensionRef(_Frozen):
 
 
 class PackageManifest(_Frozen):
-    schema_version: int = 2
+    schema_version: Literal[2] = 2
     repo: str
     distribution: str
     import_name: str

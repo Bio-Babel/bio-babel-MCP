@@ -67,6 +67,31 @@ def test_anti_pattern_detection_rejects_legacy_ast_pattern_field():
         AntiPatternDetection(ast_pattern="for_loop_calls:foo")  # type: ignore[call-arg]
 
 
+def test_package_manifest_rejects_unsupported_schema_version():
+    """Any non-2 schema_version must fail loudly. The field is Literal[2],
+    so a YAML still declaring ``schema_version: 1`` (or a typo'd 99) does
+    not silently load with a misleading version number — it raises."""
+    base = {
+        "repo": "x",
+        "distribution": "x",
+        "import_name": "x",
+        "display_name": "x",
+        "contract_class": "grammar",
+        "concepts": [
+            {
+                "id": "x.c",
+                "name": "C",
+                "category": "x",
+                "description": "",
+                "mental_model": {"general": ""},
+            }
+        ],
+    }
+    for bad in (1, 3, 99):
+        with pytest.raises(ValidationError, match="schema_version"):
+            PackageManifest(schema_version=bad, **base)
+
+
 def test_json_schema_round_trip():
     schema = PackageManifest.model_json_schema()
     assert schema["title"] == "PackageManifest"
