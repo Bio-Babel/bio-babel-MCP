@@ -3,19 +3,17 @@
 Subcommands:
   index           — discover and index installed Bio-Babel packages
   validate        — validate a package's _biobabel/ contract
-  doctor          — show registry + system health, optionally verify lock
+  doctor          — show registry + system health
   mcp             — launch the MCP stdio server
   new contract    — retrofit an existing installed Python package with a _biobabel/
   build-skills    — generate SKILL.md per registered package
   install         — write IDE config for Claude Code / Cursor / Continue / OpenAI
   export-schema   — emit the manifest.v1 JSON Schema
-  diff-api        — compare current registry against a lockfile
 """
 
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import click
@@ -25,8 +23,6 @@ from rich.table import Table
 from biobabel import SCHEMA_VERSION
 from biobabel._contracts.validator import validate_package_dir
 from biobabel._registry.builder import build_registry
-from biobabel._registry.differ import diff_registries
-from biobabel._registry.lockfile import build_lock, read_lock, write_lock
 from biobabel._retrofit.retrofit import retrofit_package
 from biobabel.manifest_api import PackageManifest
 
@@ -40,9 +36,7 @@ def main_cli() -> None:
 
 
 @main_cli.command("index")
-@click.option("--write", "lock_path", type=click.Path(), default=None,
-              help="Write a registry.lock at this path.")
-def cmd_index(lock_path: str | None) -> None:
+def cmd_index() -> None:
     reg = build_registry()
     table = Table(title=f"Discovered packages ({len(reg.packages)})")
     table.add_column("import_name")
@@ -62,49 +56,20 @@ def cmd_index(lock_path: str | None) -> None:
     if reg.errors:
         console.print(f"[yellow]{len(reg.errors)} discovery error(s):[/yellow]")
         for err in reg.errors:
-            console.print(f"  - {err.import_name} ({err.distribution}): {err.error}")
-    if lock_path:
-        lock = build_lock(reg)
-        write_lock(lock, Path(lock_path))
-        console.print(f"[green]Wrote {lock_path}[/green]")
+            console.print(f"  - {err.name} ({err.distribution}): {err.error}")
 
 
 @main_cli.command("doctor")
-@click.option("--lock", "lock_path", type=click.Path(), default=None,
-              help="Compare current registry against this lock file (sha256-per-manifest drift detection).")
 @click.option("--strict/--no-strict", default=False,
-              help="Exit non-zero on any drift or discovery error (default: drift only warns).")
-def cmd_doctor(lock_path: str | None, strict: bool) -> None:
+              help="Exit non-zero on any discovery error (default: warn only).")
+def cmd_doctor(strict: bool) -> None:
     reg = build_registry()
     console.print(f"[bold]Packages registered:[/bold] {len(reg.packages)}")
     console.print(f"[bold]Discovery errors:[/bold] {len(reg.errors)}")
     for err in reg.errors:
-        console.print(f"  ! {err.import_name} ({err.distribution}): {err.error}")
+        console.print(f"  ! {err.name} ({err.distribution}): {err.error}")
 
-    drift_count = 0
-    if lock_path:
-        from biobabel._registry.differ import diff_registries
-        from biobabel._registry.lockfile import build_lock, read_lock
-        lock = read_lock(Path(lock_path))
-        current = build_lock(reg)
-        diff = diff_registries(lock, current)
-        if diff.ok:
-            console.print(f"[green]Lock OK[/green] — {len(current.entries)} package(s), all sha256 match {lock_path}")
-        else:
-            drift_count = len(diff.added) + len(diff.removed) + len(diff.changed)
-            console.print(f"[yellow]Lock drift detected[/yellow] ({drift_count} change(s)):")
-            for name in diff.added:
-                console.print(f"  + {name}  (new package since lock)")
-            for name in diff.removed:
-                console.print(f"  - {name}  (removed since lock)")
-            for name, old, new in diff.changed:
-                console.print(f"  ~ {name}  sha256 {old[:12]}... → {new[:12]}...")
-
-    exit_code = 0
-    if reg.errors:
-        exit_code = 1
-    elif strict and drift_count > 0:
-        exit_code = 1
+    exit_code = 1 if (strict and reg.errors) else 0
     raise SystemExit(exit_code)
 
 
@@ -225,25 +190,6 @@ def cmd_new_contract(
     console.print("[bold]Next steps:[/bold]")
     for i, todo in enumerate(result.todos, 1):
         console.print(f"  {i}. {todo}")
-
-
-@main_cli.command("diff-api")
-@click.option("--lock", "lock_path", type=click.Path(exists=True), required=True)
-@click.option("--fail-on-uncontracted-change/--no-fail", default=False)
-def cmd_diff_api(lock_path: str, fail_on_uncontracted_change: bool) -> None:
-    reg = build_registry()
-    new = build_lock(reg)
-    old = read_lock(Path(lock_path))
-    diff = diff_registries(old, new)
-    payload = {
-        "added": diff.added,
-        "removed": diff.removed,
-        "changed": [{"import_name": n, "old": o, "new": x} for n, o, x in diff.changed],
-        "ok": diff.ok,
-    }
-    click.echo(json.dumps(payload, indent=2))
-    if fail_on_uncontracted_change and not diff.ok:
-        raise SystemExit(1)
 
 
 @main_cli.command("build-skills")

@@ -1,27 +1,21 @@
-"""Group 3 — Planning (3 tools)."""
+"""Group 3 — Planning (2 tools).
+
+Package recommendation is intentionally *not* an MCP tool: the LLM ranks
+packages itself from the signals surfaced by ``biobabel.list_packages``
+(triggers, task_tags, capabilities, not_when, foundation, ...). biobabel
+does not impose a hand-tuned scoring formula.
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
 from biobabel._planner.prereq_check import check_prerequisites as _check
-from biobabel._planner.recommender import recommend as _recommend
 from biobabel._planner.workflow_planner import PlanStep
 from biobabel._planner.workflow_planner import plan_workflow as _plan
 from biobabel._registry.builder import Registry
 from biobabel._runtime.session import SessionStore
 from biobabel.mcp.envelope import error, success
-
-
-def recommend(registry: Registry, *, task: str, k: int = 3) -> dict[str, Any]:
-    if not task.strip():
-        return error("biobabel.recommend", error_code="empty_task", message="task required")
-    recs = _recommend(registry, task, k=k)
-    return success(
-        "biobabel.recommend",
-        summary=f"{len(recs)} recommendation(s)",
-        outputs={"recommendations": [r.__dict__ for r in recs]},
-    )
 
 
 def plan_workflow(

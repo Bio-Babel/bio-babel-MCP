@@ -85,7 +85,7 @@ def test_retrofit_generates_expected_files(demo_pkg):
     assert (biobabel / "__init__.py").is_file()
     assert (biobabel / "package.yaml").is_file()
     assert (biobabel / "skill.md").is_file()
-    assert not (biobabel / "r_translate.yaml").exists()  # removed per ADR-0005
+    assert not (biobabel / "r_translate.yaml").exists()  # R-translation feature was cut
     assert (biobabel / "examples" / "smoke.py").is_file()
     # functions/ generated for analysis class
     assert (biobabel / "functions" / "estimate_size_factors.yaml").is_file()

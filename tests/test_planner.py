@@ -1,23 +1,13 @@
-"""Planner: recommender + workflow planner + prereq check."""
+"""Planner: workflow planner + prereq check + cross-package search."""
 
 from __future__ import annotations
 
+import pytest
+
 from biobabel._planner.prereq_check import check_prerequisites
-from biobabel._planner.recommender import recommend, search_text
+from biobabel._planner.search import search_text
 from biobabel._planner.workflow_planner import PlanStep, plan_workflow
 from biobabel._runtime.session import AdataHandle
-
-
-def test_recommend_finds_monocle_for_pseudotime(registry):
-    recs = recommend(registry, "pseudotime trajectory on single-cell data", k=3)
-    assert recs
-    assert recs[0].package == "monocle3_py"
-
-
-def test_recommend_finds_grid_for_plotting_package(registry):
-    recs = recommend(registry, "build a plotting package on top of grid", k=3)
-    assert recs
-    assert recs[0].package == "grid_py"
 
 
 def test_plan_workflow_hits_known_contract(registry):
@@ -31,6 +21,17 @@ def test_search_text_returns_idioms(registry):
     hits = search_text(registry, "push draw pop")
     kinds = {h["kind"] for h in hits}
     assert "idiom" in kinds
+
+
+def test_search_text_is_sorted_by_package_kind_id(registry):
+    hits = search_text(registry, "viewport grob unit")
+    keys = [(h["package"], h["kind"], h["id"]) for h in hits]
+    assert keys == sorted(keys), "search_text must return deterministic order"
+
+
+def test_search_text_rejects_unknown_kind(registry):
+    with pytest.raises(ValueError, match="unknown search kinds"):
+        search_text(registry, "anything", kinds=["function", "bogus"])
 
 
 def test_check_prerequisites_satisfied():

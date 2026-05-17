@@ -12,7 +12,7 @@
 | **Producer side** — upstream package | Bio-Babel maintainers (you) | a `_biobabel/` directory with YAML contracts + Python recipes, plus a Python entry-point declaration |
 | **Consumer side** — end user / IDE  | end users running `biobabel install --target X` | wiring that points their MCP-aware IDE (Claude Code, Cursor, Continue) at the local `biobabel-mcp` server |
 
-biobabel sits in the middle. At runtime it discovers the producer-side contracts via Python entry points and exposes them to the consumer side as 23 MCP tools across 6 groups.
+biobabel sits in the middle. At runtime it discovers the producer-side contracts via Python entry points and exposes them to the consumer side as 22 MCP tools across 6 groups.
 
 ```
 ┌──────────────────────────────────┐         ┌──────────────────────────────────┐
@@ -85,6 +85,34 @@ for ep in entry_points(group="biobabel.manifest"):
 
 Consequence: **whatever Bio-Babel packages the user has `pip install`-ed are exactly what biobabel sees**. Install rgrid + ggplot2 + monocle3 → biobabel returns three packages. Uninstall one → it disappears. Zero configuration on the user side.
 
+### Producer side — registering AST anti-pattern detectors
+
+A second entry-point group, `biobabel.detectors`, lets producers ship the
+Python callables behind their `AntiPatternSpec.detection.detector_id` YAML
+fields. Example from `rgrid-python`:
+
+```toml
+[project.entry-points."biobabel.detectors"]
+"rgrid.for_loop_calls" = "grid_py._biobabel.detectors:for_loop_calls"
+"rgrid.unbalanced"     = "grid_py._biobabel.detectors:unbalanced"
+"rgrid.unit_kw"        = "grid_py._biobabel.detectors:unit_kw"
+```
+
+Each callable satisfies the `biobabel.detector_api.DetectorFn` signature:
+`(ast.AST, dict[str, Any]) -> list[DetectorMatch]`. Each YAML anti-pattern
+selects one via:
+
+```yaml
+detection:
+  detector_id: rgrid.for_loop_calls
+  args:
+    calls: [rect_grob, text_grob, ...]
+```
+
+biobabel core ships **zero built-in detectors**. The grammar/anti-pattern
+knowledge lives in the package that owns the domain — that's the whole
+point of the producer-side contract.
+
 ### Consumer side — installing biobabel
 
 A user (or their agent acting through `pip`) runs:
@@ -137,12 +165,13 @@ biobabel-mcp boots → build_registry()
         │  → reads ALL the YAML files in _biobabel/ into a PackageManifest
         │
         ▼
-LLM (planning):  biobabel.recommend(task="multi-panel layout with grid")
+LLM (planning):  biobabel.list_packages()
         │
-        │  recommender matches task_tags + triggers + maturity
+        │  returns every registered package with triggers / task_tags /
+        │  capabilities / not_when / foundation — the LLM ranks itself
         │
         ▼
-Returns: [{package: "grid_py", confidence: 1.0, rationale: "..."}]
+Returns: [{import_name: "grid_py", triggers: [...], task_tags: [...], ...}, ...]
         │
         ▼
 LLM:  biobabel.describe_idiom(idiom_id="grid_py.nested_viewport")
@@ -167,9 +196,10 @@ Returns: {issues: []}   (no anti-pattern hit)
 LLM:  biobabel.create_session()  → session_id
 LLM:  biobabel.run_code(session_id, code)
         │
-        │  subprocess sandbox: rlimits + AST scan + workspace dir
+        │  subprocess guardrail: rlimits + AST scan + workspace cwd
+        │  (not a security boundary — see ADR-0006)
         │  user code imports grid_py, draws, writes multi_panel.png
-        │  sandbox harvests new files → ArtifactHandle with provenance
+        │  guardrail harvests new files → ArtifactHandle with provenance
         │
         ▼
 Returns: {ok: true, new_artifacts: [{artifact_id, path, content_hash, ...}]}
@@ -183,7 +213,7 @@ Note that biobabel itself **does not draw anything** and **does not understand g
 1. Discovers what packages exist (entry points)
 2. Reads their declared concepts / idioms / anti-patterns (YAML)
 3. Surfaces them as MCP tools (envelope + dispatch)
-4. Sandboxes execution (subprocess + rlimits + AST scan)
+4. Guards execution against agent mistakes (subprocess + rlimits + AST scan; **not** a security boundary — see ADR-0006)
 5. Records provenance (artifact hashes, code hashes, package versions)
 
 The actual *knowledge* lives in each upstream package's `_biobabel/`.
@@ -192,7 +222,7 @@ The actual *knowledge* lives in each upstream package's `_biobabel/`.
 
 1. **Contract is mandatory.** No `_biobabel/` → not registered. No reflection fallback. (See `_registry/discovery.py`: there is exactly one discovery code path.)
 2. **Entry-point only.** biobabel never scans `site-packages/` looking for packages. The producer must declare itself.
-3. **Subprocess sandbox only.** No `exec()`, no thread isolation, no in-process eval. All untrusted code runs in `_runtime/sandbox.py`.
+3. **Subprocess guardrail only.** No `exec()`, no thread isolation, no in-process eval. All user-generated code runs via `_runtime/sandbox.py` — but this is a *guardrail against agent mistakes*, not a security boundary. See ADR-0006 for the threat model and what is explicitly out of scope.
 4. **MCP-first.** Every agent-facing capability is reachable through a tool name like `biobabel.X`. The CLI exists for human maintainers.
 5. **No silent degradation.** rpy2 not installed → `biobabel.r_verify` raises with a clear message. There is no "best effort" mode.
 6. **One schema version at a time.** Manifest schema v1 is additive within itself. Breaking changes require an explicit v2 (with plan-level approval).
@@ -205,13 +235,13 @@ biobabel/
 │   ├── manifest_api.py         ← the ONLY public Python surface (Pydantic models)
 │   ├── _registry/              ← entry-point discovery + lockfile + diff
 │   ├── _contracts/             ← _biobabel/ directory validator
-│   ├── _runtime/               ← subprocess sandbox, session, artifacts, trace
+│   ├── _runtime/               ← subprocess guardrail, session, artifacts, trace
 │   ├── _planner/               ← recommend / plan_workflow / check_prereq
 │   ├── _concept/               ← idiom search + anti-pattern AST detector
 │   ├── _r_python/              ← R↔Py translator + migrator + (rpy2 opt-in) verifier
 │   ├── _retrofit/              ← `biobabel new contract` — introspect an existing pkg, emit _biobabel/ skeleton
 │   ├── _exporters/             ← biobabel install --target X
-│   ├── mcp/                    ← 27 tools, JSON-RPC stdio transport
+│   ├── mcp/                    ← 22 tools, JSON-RPC stdio transport
 │   └── cli/                    ← biobabel CLI (click)
 └── tests/                      ← unit tests covering all of the above
 ```

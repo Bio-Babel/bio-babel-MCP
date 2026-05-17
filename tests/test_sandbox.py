@@ -39,3 +39,19 @@ def test_timeout(tmp_path):
     res = run_code(code, tmp_path, limits=limits, timeout_s=1)
     assert not res.ok
     assert res.error_code == "timeout"
+
+
+def test_ensure_rlimit_support_runs_on_supported_host():
+    """The startup probe replaces the previous silent try/except around
+    setrlimit. On a supported POSIX host it must succeed loudly — no
+    fallback path, no silent skip.
+
+    Linux: passes; macOS: emits a warning then passes; Windows: raises
+    RuntimeError (filtered out by the module pytestmark above).
+    """
+    from biobabel._runtime import sandbox
+
+    # Reset the module flag so we actually re-run the probe in this test.
+    sandbox._rlimit_support_checked = False
+    sandbox._ensure_rlimit_support()
+    assert sandbox._rlimit_support_checked is True

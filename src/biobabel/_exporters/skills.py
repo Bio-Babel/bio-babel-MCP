@@ -18,7 +18,7 @@ The `generated_from_registry_commit` field lets CI assert the skills are
 in sync with the contracts (final_plan §18.3 drift rule).
 
 In addition, a top-level `biobabel-overview/SKILL.md` is always emitted —
-hand-curated content explaining the 27 MCP tools and the two-class framework.
+hand-curated content explaining the 22 MCP tools and the two-class framework.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from pathlib import Path
 
 from biobabel import __version__ as BIOBABEL_VERSION
 from biobabel._registry.builder import Registry
-from biobabel._registry.lockfile import manifest_sha256
+from biobabel._registry.sha import manifest_sha256
 
 
 @dataclass
@@ -131,7 +131,7 @@ def _render_overview(registry: Registry) -> str:
     lines = [
         "---",
         "name: biobabel-overview",
-        "description: 27 MCP tools for Bio-Babel — discover, plan, translate, retrofit. Read this first when the user mentions an R bioinformatics package or a Bio-Babel name.",
+        "description: 22 MCP tools for Bio-Babel — discover, plan, translate, retrofit. Read this first when the user mentions an R bioinformatics package or a Bio-Babel name.",
         f"biobabel_version: {BIOBABEL_VERSION}",
         "---",
         "",
@@ -154,8 +154,8 @@ def _render_overview(registry: Registry) -> str:
         "",
         "| User says                                                        | Reach for                                            |",
         "|------------------------------------------------------------------|------------------------------------------------------|",
-        "| \"run pseudotime / trajectory / monocle3 / copykat / clustering\"  | `biobabel.recommend` → `biobabel.plan_workflow` (Class A) |",
-        "| \"draw / plot / custom geom / grid / ggplot2 / pheatmap\"          | `biobabel.recommend` → `biobabel.describe_concept` + `list_idioms` (Class B) |",
+        "| \"run pseudotime / trajectory / monocle3 / copykat / clustering\"  | `biobabel.list_packages` (read triggers/tags) → `biobabel.plan_workflow` (Class A) |",
+        "| \"draw / plot / custom geom / grid / ggplot2 / pheatmap\"          | `biobabel.list_packages` (read triggers/tags) → `biobabel.describe_concept` + `list_idioms` (Class B) |",
         "| pastes R syntax (`library(`, `<-`, `%>%`)                        | `/biobabel:r-translate <snippet>`                    |",
         "| pastes a whole .R script                                         | `/biobabel:migrate <path>`                           |",
         "| \"add biobabel support to my package\"                             | invoke the **contract-retrofitter** subagent         |",

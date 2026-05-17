@@ -44,6 +44,32 @@ $EDITOR <pkg>/_biobabel/...                   # fill the YAML stubs
 biobabel validate package --pkg <import_name> --strict
 ```
 
+#### Optional — register AST anti-pattern detectors
+
+If your `_biobabel/anti_patterns/*.yaml` uses AST-level detection (anything beyond plain `regex:`), ship the detector callables alongside the manifest. biobabel core has **no built-in detectors** — every AST rule lives in the package that owns the domain.
+
+1. Write `<pkg>/_biobabel/detectors.py`, with functions matching `biobabel.detector_api.DetectorFn`:
+   ```python
+   from biobabel.detector_api import DetectorMatch
+
+   def for_loop_calls(tree, args) -> list[DetectorMatch]:
+       ...  # return DetectorMatch(line=..., detail={...}) per hit
+   ```
+2. Register them in `pyproject.toml`:
+   ```toml
+   [project.entry-points."biobabel.detectors"]
+   "mypkg.for_loop_calls" = "mypkg._biobabel.detectors:for_loop_calls"
+   ```
+3. Reference each by `detector_id` in the relevant YAML:
+   ```yaml
+   detection:
+     detector_id: mypkg.for_loop_calls
+     args:
+       calls: [foo, bar]
+   ```
+
+Pure-regex anti-patterns (no AST walk needed) skip this — `detection.regex:` alone is enough. The canonical Class B example with three AST detectors is [`rgrid-python`](https://github.com/Bio-Babel/rgrid-python).
+
 After publishing, agents in any biobabel-wired IDE discover your package automatically (via Python entry points — no central registry).
 
 ## Documentation

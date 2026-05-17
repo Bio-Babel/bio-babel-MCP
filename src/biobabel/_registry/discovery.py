@@ -1,8 +1,13 @@
-"""Entry-point only manifest discovery.
+"""Entry-point only manifest + detector discovery.
 
-Per the §0.4 hard constraint: there is NO reflection fallback. A package is
-only visible to biobabel if it registers a `biobabel.manifest` entry point
-that returns a :class:`PackageManifest`.
+There is NO reflection fallback for either kind. A package is only visible
+to biobabel if it registers the appropriate entry point.
+
+Two entry-point groups:
+
+- ``biobabel.manifest``   →  the upstream package's :class:`PackageManifest`
+- ``biobabel.detectors``  →  a :data:`DetectorFn` referenced by an
+                              ``AntiPatternSpec.detection.detector_id``
 """
 
 from __future__ import annotations
@@ -11,9 +16,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from importlib.metadata import EntryPoint, distributions, entry_points
 
+from biobabel.detector_api import DetectorFn
 from biobabel.manifest_api import PackageManifest
 
-ENTRY_POINT_GROUP = "biobabel.manifest"
+MANIFEST_ENTRY_POINT_GROUP = "biobabel.manifest"
+DETECTOR_ENTRY_POINT_GROUP = "biobabel.detectors"
+
+# Backward-compatible alias; some older internal callers reference this name.
+ENTRY_POINT_GROUP = MANIFEST_ENTRY_POINT_GROUP
 
 
 @dataclass(frozen=True)
@@ -27,37 +37,46 @@ class DiscoveredManifest:
 
 
 @dataclass(frozen=True)
+class DiscoveredDetector:
+    """A successfully discovered AST detector callable, with its provenance."""
+
+    detector_id: str            # the entry-point name (e.g. "rgrid.for_loop_calls")
+    distribution: str
+    distribution_version: str
+    fn: DetectorFn
+
+
+@dataclass(frozen=True)
 class DiscoveryError:
     """A failed discovery attempt — entry point existed but couldn't be loaded."""
 
-    import_name: str
+    name: str                   # import_name OR detector_id
     distribution: str
     error: str
+    kind: str = "manifest"      # "manifest" | "detector"
 
 
 def discover() -> tuple[list[DiscoveredManifest], list[DiscoveryError]]:
-    """Load all `biobabel.manifest` entry points.
+    """Load all ``biobabel.manifest`` entry points.
 
-    Returns ``(successes, errors)``. Errors are surfaced rather than swallowed,
-    so the CLI / MCP `health` tool can warn the user about broken packages.
+    Returns ``(successes, errors)``. Errors are surfaced rather than swallowed
+    so the CLI / MCP ``health`` tool can warn the user about broken packages.
     """
-    eps = entry_points(group=ENTRY_POINT_GROUP)
-    dist_index = _build_distribution_index()
-
+    dist_index = _build_distribution_index(MANIFEST_ENTRY_POINT_GROUP)
     successes: list[DiscoveredManifest] = []
     errors: list[DiscoveryError] = []
 
-    for ep in eps:
+    for ep in entry_points(group=MANIFEST_ENTRY_POINT_GROUP):
         dist_name, dist_version = dist_index.get(ep, ("unknown", "0.0.0"))
         try:
             factory = ep.load()
         except Exception as exc:
-            errors.append(DiscoveryError(ep.name, dist_name, f"entry-point load failed: {exc!r}"))
+            errors.append(DiscoveryError(ep.name, dist_name, f"entry-point load failed: {exc!r}", kind="manifest"))
             continue
 
         manifest = _invoke_factory(factory)
         if isinstance(manifest, BaseException):
-            errors.append(DiscoveryError(ep.name, dist_name, f"factory raised: {manifest!r}"))
+            errors.append(DiscoveryError(ep.name, dist_name, f"factory raised: {manifest!r}", kind="manifest"))
             continue
         if not isinstance(manifest, PackageManifest):
             errors.append(
@@ -65,6 +84,7 @@ def discover() -> tuple[list[DiscoveredManifest], list[DiscoveryError]]:
                     ep.name,
                     dist_name,
                     f"factory returned {type(manifest).__name__}, expected PackageManifest",
+                    kind="manifest",
                 )
             )
             continue
@@ -75,6 +95,47 @@ def discover() -> tuple[list[DiscoveredManifest], list[DiscoveryError]]:
                 distribution=dist_name,
                 distribution_version=dist_version,
                 manifest=manifest,
+            )
+        )
+
+    return successes, errors
+
+
+def discover_detectors() -> tuple[list[DiscoveredDetector], list[DiscoveryError]]:
+    """Load all ``biobabel.detectors`` entry points.
+
+    Each entry-point name is the ``detector_id`` referenced from
+    :class:`AntiPatternSpec.detection.detector_id`. The entry-point's
+    callable target must satisfy the :data:`DetectorFn` signature; a
+    non-callable target is recorded as a discovery error.
+    """
+    dist_index = _build_distribution_index(DETECTOR_ENTRY_POINT_GROUP)
+    successes: list[DiscoveredDetector] = []
+    errors: list[DiscoveryError] = []
+
+    for ep in entry_points(group=DETECTOR_ENTRY_POINT_GROUP):
+        dist_name, dist_version = dist_index.get(ep, ("unknown", "0.0.0"))
+        try:
+            target = ep.load()
+        except Exception as exc:
+            errors.append(DiscoveryError(ep.name, dist_name, f"entry-point load failed: {exc!r}", kind="detector"))
+            continue
+        if not callable(target):
+            errors.append(
+                DiscoveryError(
+                    ep.name,
+                    dist_name,
+                    f"target is {type(target).__name__}, not callable",
+                    kind="detector",
+                )
+            )
+            continue
+        successes.append(
+            DiscoveredDetector(
+                detector_id=ep.name,
+                distribution=dist_name,
+                distribution_version=dist_version,
+                fn=target,
             )
         )
 
@@ -93,14 +154,14 @@ def _invoke_factory(factory: Callable[[], PackageManifest] | PackageManifest) ->
     return TypeError(f"{factory!r} is neither a PackageManifest nor a callable")
 
 
-def _build_distribution_index() -> dict[EntryPoint, tuple[str, str]]:
-    """Map each biobabel.manifest entry point back to its providing distribution."""
+def _build_distribution_index(group: str) -> dict[EntryPoint, tuple[str, str]]:
+    """Map each entry point in *group* back to its providing distribution."""
     index: dict[EntryPoint, tuple[str, str]] = {}
     for dist in distributions():
         meta = dist.metadata
         name = meta["Name"] if meta and "Name" in meta else "unknown"
         version = dist.version or "0.0.0"
         for ep in dist.entry_points:
-            if ep.group == ENTRY_POINT_GROUP:
+            if ep.group == group:
                 index[ep] = (name, version)
     return index

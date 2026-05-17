@@ -20,7 +20,7 @@ def list_tools(tool_names: list[str]) -> dict[str, Any]:
 def health(registry: Registry, sessions: SessionStore) -> dict[str, Any]:
     warnings: list[str] = []
     for err in registry.errors:
-        warnings.append(f"{err.import_name} ({err.distribution}): {err.error}")
+        warnings.append(f"[{err.kind}] {err.name} ({err.distribution}): {err.error}")
     return success(
         "biobabel.health",
         summary=f"{len(registry.packages)} packages, {len(sessions.list_sessions())} sessions, {len(warnings)} discovery warning(s)",

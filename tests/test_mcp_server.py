@@ -6,18 +6,23 @@ from biobabel._runtime.session import SessionStore
 from biobabel.mcp.server import BiobabelMCPServer
 
 
-def test_server_wires_23_tools(registry):
+def test_server_wires_22_tools(registry):
     server = BiobabelMCPServer(registry=registry, sessions=SessionStore())
-    assert server.tool_count == 23
+    assert server.tool_count == 22
 
 
-def test_list_packages_envelope(registry):
+def test_list_packages_envelope_surfaces_ranking_signals(registry):
+    """list_packages must surface every signal the LLM needs to rank
+    packages itself — biobabel deliberately does not score."""
     server = BiobabelMCPServer(registry=registry, sessions=SessionStore())
     env = server.call("biobabel.list_packages")
     assert env["ok"] is True
     assert env["tool_name"] == "biobabel.list_packages"
-    assert "packages" in env["outputs"]
-    assert {p["import_name"] for p in env["outputs"]["packages"]} >= {"grid_py", "monocle3_py"}
+    packages = env["outputs"]["packages"]
+    assert {p["import_name"] for p in packages} >= {"grid_py", "monocle3_py"}
+    sample = packages[0]
+    for field in ("triggers", "task_tags", "capabilities", "domain_tags", "not_when", "foundation"):
+        assert field in sample, f"list_packages must expose '{field}' for LLM ranking"
 
 
 def test_describe_concept(registry):
@@ -48,30 +53,32 @@ def test_unknown_tool_returns_error_envelope(registry):
     assert env["error_code"] == "unknown_tool"
 
 
-def test_recommend_envelope(registry):
+def test_recommend_tool_is_absent(registry):
+    """biobabel.recommend was removed: LLM ranks packages itself from
+    list_packages signals. No hand-tuned scoring inside biobabel."""
     server = BiobabelMCPServer(registry=registry, sessions=SessionStore())
-    env = server.call("biobabel.recommend", task="pseudotime trajectory", k=3)
-    assert env["ok"]
-    recs = env["outputs"]["recommendations"]
-    assert recs and recs[0]["package"] == "monocle3_py"
+    assert "biobabel.recommend" not in server.tool_names
+    env = server.call("biobabel.recommend", task="anything")
+    assert env["ok"] is False
+    assert env["error_code"] == "unknown_tool"
 
 
 def test_list_tools_returns_all(registry):
     server = BiobabelMCPServer(registry=registry, sessions=SessionStore())
     env = server.call("biobabel.list_tools")
     assert env["ok"]
-    assert len(env["outputs"]["tools"]) == 23
+    assert len(env["outputs"]["tools"]) == 22
 
 
 def test_removed_tools_are_absent(registry):
-    """The scope reduction (ADR-0005) removed these 4 tools. Assert they're gone."""
+    """These tools were removed during scope reduction; assert they're gone."""
     server = BiobabelMCPServer(registry=registry, sessions=SessionStore())
     for removed in (
         "biobabel.r_translate",
         "biobabel.r_verify",
         "biobabel.migrate",
         "biobabel.new_contract",  # CLI-only now
-        "biobabel.scaffold",       # removed earlier (ADR-0004)
+        "biobabel.scaffold",
     ):
         assert removed not in server.tool_names, f"{removed} should not be in MCP surface"
 

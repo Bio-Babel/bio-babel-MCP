@@ -1,4 +1,4 @@
-"""MCP server — 27 tools across 8 groups."""
+"""MCP server — 22 tools across 6 groups."""
 
 from biobabel.mcp.envelope import error, success
 from biobabel.mcp.server import BiobabelMCPServer, build_server

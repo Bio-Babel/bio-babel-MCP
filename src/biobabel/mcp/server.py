@@ -1,4 +1,4 @@
-"""biobabel MCP server — wires the 27 tools to a dispatch table.
+"""biobabel MCP server — wires the 22 tools to a dispatch table.
 
 We keep the dispatch decoupled from any specific MCP SDK so the same handlers
 can be smoke-tested in pytest and shipped through stdio / http transports.
@@ -65,10 +65,9 @@ class BiobabelMCPServer:
                   lambda **kw: discovery.describe_workflow(reg, **kw),
                   "WorkflowContract details (Class A)")
 
-        # Group 2 — Planning (3)
-        self._add("biobabel.recommend", "planning",
-                  lambda **kw: planning.recommend(reg, **kw),
-                  "Task → ranked package recommendations")
+        # Group 2 — Planning (2)
+        # NOTE: package recommendation is deliberately not a tool. LLMs rank
+        # packages from biobabel.list_packages' triggers/tags/capabilities.
         self._add("biobabel.plan_workflow", "planning",
                   lambda **kw: planning.plan_workflow(reg, **kw),
                   "Task → WorkflowContract or ad-hoc DAG")

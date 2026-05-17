@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from biobabel._planner.recommender import search_text
+from biobabel._planner.search import search_text
 from biobabel._registry.builder import Registry
 from biobabel.mcp.envelope import error, success
 
@@ -26,6 +26,17 @@ def list_packages(
             "tier": d.manifest.tier,
             "maturity": d.manifest.maturity,
             "display_name": d.manifest.display_name,
+            # Signals the LLM uses to rank packages against a user task.
+            # No scoring is done here — the consumer side decides relevance.
+            "triggers": [
+                {"intent": t.intent, "confidence": t.confidence}
+                for t in d.manifest.triggers
+            ],
+            "task_tags": list(d.manifest.task_tags),
+            "capabilities": list(d.manifest.capabilities),
+            "domain_tags": list(d.manifest.domain_tags),
+            "not_when": list(d.manifest.not_when),
+            "foundation": list(d.manifest.foundation),
         }
         for d in items
     ]

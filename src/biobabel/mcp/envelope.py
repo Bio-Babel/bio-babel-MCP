@@ -1,4 +1,4 @@
-"""Structured response envelope shared by all 27 MCP tools."""
+"""Structured response envelope shared by all 22 MCP tools."""
 
 from __future__ import annotations
 

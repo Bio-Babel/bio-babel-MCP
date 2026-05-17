@@ -1,6 +1,11 @@
 """Pydantic v2 models for the biobabel contract.
 
-Schema version 1. Additive-only within v1.
+Schema version 2 (current). Additive-only within v2.
+
+v1 → v2 break: ``AntiPatternDetection`` replaced the mini-DSL string
+``ast_pattern: "<kind>:<args>"`` with structured ``detector_id`` +
+``args`` so that producers can register their own AST detectors via the
+``biobabel.detectors`` entry-point group.
 """
 
 from __future__ import annotations
@@ -151,15 +156,28 @@ class IdiomSpec(_Frozen):
 
 
 class AntiPatternDetection(_Frozen):
-    ast_pattern: str = ""
+    """How to detect an anti-pattern in user code.
+
+    A detection rule has either an AST-based detector (a callable
+    registered via the ``biobabel.detectors`` entry-point group, referred
+    to here by ``detector_id``, with structured ``args``) or a plain
+    regex, or both. At least one of ``detector_id`` / ``regex`` must be
+    set — an empty detection raises at manifest-load time.
+
+    Schema v2: ``ast_pattern`` (the old "kind:arg,arg,..." string) was
+    removed; this is the breaking change between v1 and v2.
+    """
+
+    detector_id: str = ""
+    args: dict[str, Any] = Field(default_factory=dict)
     regex: str = ""
     static_only: bool = True
 
     @model_validator(mode="after")
     def _at_least_one_rule(self) -> AntiPatternDetection:
-        if not self.ast_pattern and not self.regex:
+        if not self.detector_id and not self.regex:
             raise ValueError(
-                "AntiPatternDetection: must set at least one of ast_pattern / regex"
+                "AntiPatternDetection: must set at least one of detector_id / regex"
             )
         return self
 
@@ -205,7 +223,7 @@ class ExtensionRef(_Frozen):
 
 
 class PackageManifest(_Frozen):
-    schema_version: int = 1
+    schema_version: int = 2
     repo: str
     distribution: str
     import_name: str

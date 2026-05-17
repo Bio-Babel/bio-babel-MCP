@@ -6,8 +6,6 @@ to violate a stated invariant.
 
 from __future__ import annotations
 
-from biobabel._registry.differ import diff_registries
-from biobabel._registry.lockfile import build_lock
 from biobabel._runtime.session import SessionStore
 from biobabel.mcp.server import BiobabelMCPServer
 
@@ -48,32 +46,12 @@ def test_mcp_tool_descriptions_are_short_and_static(registry):
         assert len(desc) < 200, f"tool {name} description suspiciously long: {len(desc)} chars"
 
 
-# --- 2. Lock file detects manifest drift ----------------------------------
-
-
-def test_lock_detects_manifest_drift(registry):
-    """Threat: an attacker (or a careless commit) modifies an installed
-    `_biobabel/package.yaml` in place. We must detect this at `biobabel doctor`
-    time.
-
-    Defense: registry.lock records sha256 per manifest; differ flags any
-    mismatch.
-    """
-    lock_before = build_lock(registry)
-    # Mutate a manifest.
-    registry.packages["grid_py"].manifest.maturity = "stable"  # type: ignore[misc]
-    lock_after = build_lock(registry)
-
-    diff = diff_registries(lock_before, lock_after)
-    assert not diff.ok
-    assert any(name == "grid_py" for name, _, _ in diff.changed)
-
-
-def test_lock_unchanged_when_manifest_unchanged(registry):
-    lock1 = build_lock(registry)
-    lock2 = build_lock(registry)
-    diff = diff_registries(lock1, lock2)
-    assert diff.ok
+# --- 2. (slot intentionally vacant) ---------------------------------------
+# The previous file-based "registry.lock detects manifest drift" tests were
+# removed along with the lockfile machinery itself. The lockfile was
+# set-but-never-read at startup and defended against a threat (tampered
+# upstream packages) that was already out of scope. Drift detection that
+# matters happens at the distribution level via `pip` pinning + sigstore.
 
 
 # --- 3. No-network invariant ---------------------------------------------
@@ -123,11 +101,12 @@ def test_no_network_imports_in_biobabel_src():
 
 def test_registry_has_no_reflection_fallback():
     """Threat: a contributor adds a `for pkg in iter_modules(): ...` fallback
-    that synthesizes manifests from non-contracted packages. This invalidates
-    ADR-0002.
+    that synthesizes manifests from non-contracted packages.
 
     Defense: this test asserts the discovery module only references the
-    `entry_points` API.
+    `entry_points` API. The contract-mandatory invariant means a package
+    without a declared entry-point must be invisible to biobabel — no
+    silent reflection-based fallback.
     """
     import pathlib
     discovery = pathlib.Path(__file__).resolve().parent.parent / "src" / "biobabel" / "_registry" / "discovery.py"
@@ -137,11 +116,33 @@ def test_registry_has_no_reflection_fallback():
     found = [needle for needle in forbidden if needle in text]
     assert not found, (
         f"_registry/discovery.py contains forbidden reflection APIs: {found}. "
-        "This breaks ADR-0002 (contract is mandatory; no reflection fallback)."
+        "The contract is mandatory; there must be no reflection fallback."
     )
 
 
-# --- 5. Subprocess sandbox is the only execution path ---------------------
+# --- 5. Dead "BIOBABEL_NETWORK_DENY" env var must not come back ----------
+
+
+def test_biobabel_network_deny_env_var_was_removed():
+    """``BIOBABEL_NETWORK_DENY=1`` was set into the guarded subprocess env
+    but no code ever read it. It was theater — listed in the audit doc as
+    a mitigation while doing nothing. Removed.
+
+    This regression guard ensures it does not come back without an actual
+    reader being wired up at the same time.
+    """
+    import pathlib
+    src = pathlib.Path(__file__).resolve().parent.parent / "src" / "biobabel"
+    for py in src.rglob("*.py"):
+        text = py.read_text()
+        assert "BIOBABEL_NETWORK_DENY" not in text, (
+            f"{py}: BIOBABEL_NETWORK_DENY was removed because nothing "
+            "reads it. Don't reintroduce it without wiring up an actual "
+            "reader in the same change."
+        )
+
+
+# --- 6. Subprocess guardrail is the only execution path -------------------
 
 
 def test_no_exec_or_eval_in_biobabel_src():

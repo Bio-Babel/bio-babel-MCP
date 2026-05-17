@@ -15,9 +15,10 @@ This file is loaded by Claude Code / Cursor / Codex / Continue / etc. when worki
 
 - Python 3.12+, `from __future__ import annotations` everywhere.
 - Pydantic v2 for all schemas. Models live in `src/biobabel/manifest_api.py` and are re-exported.
-- Internal-only modules are prefixed `_` (`_registry/`, `_runtime/`, ...). The public Python surface is `biobabel.manifest_api` only.
-- Subprocess sandbox is the *only* execution mechanism. No `exec()`, no thread-based isolation.
+- Internal-only modules are prefixed `_` (`_registry/`, `_runtime/`, ...). Two public Python surfaces: `biobabel.manifest_api` (contract schemas) and `biobabel.detector_api` (AST detector types — `DetectorMatch`, `DetectorFn`). Adding a third public surface requires plan-level approval.
+- Subprocess guardrail (`_runtime/sandbox.py`) is the *only* execution mechanism. No `exec()`, no thread-based isolation. It is a guardrail against agent mistakes, not a security boundary.
 - All MCP tool returns must use `biobabel.mcp.envelope.success(...)` / `error(...)`.
+- biobabel core hosts no domain-specific AST detectors. Producer packages register detectors under the `biobabel.detectors` entry-point group; YAML `AntiPatternSpec.detection.detector_id` references those registrations.
 
 ## Adding a new MCP tool
 

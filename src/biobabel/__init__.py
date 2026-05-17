@@ -1,10 +1,17 @@
 """biobabel — agent control plane for the Bio-Babel ecosystem.
 
-The only stable Python surface for upstream package authors is
-:mod:`biobabel.manifest_api`. Everything else (`_registry`, `_runtime`, ...)
-is private.
+Stable public Python surfaces for upstream package authors:
+
+- :mod:`biobabel.manifest_api` — Pydantic models for the ``_biobabel/``
+  contract (PackageManifest, FunctionContract, AntiPatternSpec, ...).
+- :mod:`biobabel.detector_api` — types for callables registered via the
+  ``biobabel.detectors`` entry-point group (DetectorMatch, DetectorFn).
+  Added in schema v2.
+
+Everything else (``_registry``, ``_runtime``, ``_concept``, ...) is private.
 """
 
+from biobabel.detector_api import DetectorFn, DetectorMatch
 from biobabel.manifest_api import (
     AntiPatternDetection,
     AntiPatternSpec,
@@ -27,14 +34,16 @@ from biobabel.manifest_api import (
     WorkflowStep,
 )
 
-__version__ = "0.1.0"
-SCHEMA_VERSION = 1
+__version__ = "0.2.0"
+SCHEMA_VERSION = 2
 
 __all__ = [
     "AntiPatternDetection",
     "AntiPatternSpec",
     "CompositionSpec",
     "ConceptSpec",
+    "DetectorFn",
+    "DetectorMatch",
     "ExtensionRef",
     "FailureFix",
     "FunctionContract",

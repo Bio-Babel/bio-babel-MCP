@@ -207,7 +207,7 @@ ComplexHeatmap, copykat, grid_py, gtable, scales, etc., reach for the
 biobabel.* MCP tools first instead of guessing the Python API from R memory.
 
 Key tools:
-- biobabel.recommend(task)         — task → ranked packages
+- biobabel.list_packages()         — every registered package with triggers/tags/capabilities/not_when; rank yourself
 - biobabel.plan_workflow(task)     — Class A pipeline (Monocle3, copykat, ...)
 - biobabel.check_prerequisites     — verify adata state before each step
 - biobabel.describe_concept(id)    — Class B mental model (grid_py.Viewport, ...)

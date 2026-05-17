@@ -1,11 +1,21 @@
-"""Shared pytest fixtures: a synthetic Registry that doesn't need installed pkgs."""
+"""Shared pytest fixtures: a synthetic Registry that doesn't need installed pkgs.
+
+The registry fixture mirrors what ``build_registry()`` would assemble under
+schema v2: it loads two manifests (one grammar, one analysis) and attaches a
+small set of in-process detectors so anti-pattern tests can run without
+going through entry-point discovery.
+"""
 
 from __future__ import annotations
+
+import ast
+from typing import Any
 
 import pytest
 
 from biobabel._registry.builder import Registry
-from biobabel._registry.discovery import DiscoveredManifest
+from biobabel._registry.discovery import DiscoveredDetector, DiscoveredManifest
+from biobabel.detector_api import DetectorMatch
 from biobabel.manifest_api import (
     AntiPatternDetection,
     AntiPatternSpec,
@@ -19,6 +29,49 @@ from biobabel.manifest_api import (
     WorkflowContract,
     WorkflowStep,
 )
+
+
+# --- In-process detectors used by the grammar manifest's anti_patterns ----
+#
+# In real deployments these would live in rgrid-python's _biobabel/detectors.py
+# and be discovered via entry-points. For tests we wire them directly so the
+# fixture is self-contained and does not depend on the upstream package being
+# pip-installed.
+
+
+def _fake_for_loop_calls(tree: ast.AST, args: dict[str, Any]) -> list[DetectorMatch]:
+    targets = set(args.get("calls", []))
+    hits: list[DetectorMatch] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.For, ast.AsyncFor)):
+            for child in ast.walk(node):
+                if isinstance(child, ast.Call):
+                    fn = child.func
+                    name = fn.id if isinstance(fn, ast.Name) else (fn.attr if isinstance(fn, ast.Attribute) else "")
+                    if name in targets:
+                        hits.append(DetectorMatch(line=node.lineno, detail={"target_call": name}))
+                        break
+    return hits
+
+
+def _fake_unbalanced(tree: ast.AST, args: dict[str, Any]) -> list[DetectorMatch]:
+    push_fn = args.get("push", "")
+    pop_fn = args.get("pop", "")
+    push_count = pop_count = 0
+    first_line = 0
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            fn = node.func
+            name = fn.id if isinstance(fn, ast.Name) else (fn.attr if isinstance(fn, ast.Attribute) else "")
+            if name == push_fn:
+                push_count += 1
+                if not first_line:
+                    first_line = node.lineno
+            elif name == pop_fn:
+                pop_count += 1
+    if push_count != pop_count:
+        return [DetectorMatch(line=first_line or 1, detail={"push": push_count, "pop": pop_count})]
+    return []
 
 
 @pytest.fixture
@@ -62,7 +115,8 @@ def grammar_manifest() -> PackageManifest:
                 name="Building grobs in a loop",
                 applicable_to=["grid_py.Grob"],
                 detection=AntiPatternDetection(
-                    ast_pattern="for_loop_calls:rect_grob,text_grob",
+                    detector_id="rgrid.for_loop_calls",
+                    args={"calls": ["rect_grob", "text_grob"]},
                 ),
                 why_bad="N draws instead of 1.",
                 correct_pattern="grid_py.build_grobtree",
@@ -73,7 +127,8 @@ def grammar_manifest() -> PackageManifest:
                 name="Unbalanced push_pop",
                 applicable_to=["grid_py.Viewport"],
                 detection=AntiPatternDetection(
-                    ast_pattern="unbalanced:push_viewport,pop_viewport",
+                    detector_id="rgrid.unbalanced",
+                    args={"push": "push_viewport", "pop": "pop_viewport"},
                 ),
                 why_bad="Stack ends dirty.",
                 correct_pattern="grid_py.try_finally_pop",
@@ -155,7 +210,7 @@ def registry(grammar_manifest, analysis_manifest) -> Registry:
     reg.packages["grid_py"] = DiscoveredManifest(
         import_name="grid_py",
         distribution="rgrid-python",
-        distribution_version="4.5.3.post3",
+        distribution_version="4.5.3.post4",
         manifest=grammar_manifest,
     )
     reg.packages["monocle3_py"] = DiscoveredManifest(
@@ -164,6 +219,18 @@ def registry(grammar_manifest, analysis_manifest) -> Registry:
         distribution_version="0.1.0",
         manifest=analysis_manifest,
     )
+
+    # Detectors that the grammar manifest's anti_patterns reference.
+    for did, fn in (
+        ("rgrid.for_loop_calls", _fake_for_loop_calls),
+        ("rgrid.unbalanced", _fake_unbalanced),
+    ):
+        reg.detectors[did] = DiscoveredDetector(
+            detector_id=did,
+            distribution="rgrid-python",
+            distribution_version="4.5.3.post4",
+            fn=fn,
+        )
 
     for d in reg.packages.values():
         m = d.manifest

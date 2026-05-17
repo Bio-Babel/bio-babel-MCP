@@ -462,7 +462,7 @@ def _render_package_yaml(
     import_name: str, contract_class: str, r_package: str | None, package_root: Path
 ) -> str:
     data: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "repo": "TODO: https://github.com/<org>/<repo>",
         "distribution": "TODO: <pypi-distribution-name>",
         "import_name": import_name,

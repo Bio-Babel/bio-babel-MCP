@@ -48,6 +48,25 @@ def test_anti_pattern_detection_requires_at_least_one_rule():
         AntiPatternDetection()
 
 
+def test_anti_pattern_detection_accepts_detector_id():
+    d = AntiPatternDetection(detector_id="rgrid.for_loop_calls", args={"calls": ["x"]})
+    assert d.detector_id == "rgrid.for_loop_calls"
+    assert d.args == {"calls": ["x"]}
+
+
+def test_anti_pattern_detection_accepts_regex_only():
+    d = AntiPatternDetection(regex=r"foo")
+    assert d.regex == "foo"
+    assert d.detector_id == ""
+
+
+def test_anti_pattern_detection_rejects_legacy_ast_pattern_field():
+    """v1 used ``ast_pattern: "kind:arg"``. v2 dropped that field; a stale
+    YAML still carrying it must fail loudly under Pydantic's extra=forbid."""
+    with pytest.raises(ValidationError, match="ast_pattern"):
+        AntiPatternDetection(ast_pattern="for_loop_calls:foo")  # type: ignore[call-arg]
+
+
 def test_json_schema_round_trip():
     schema = PackageManifest.model_json_schema()
     assert schema["title"] == "PackageManifest"

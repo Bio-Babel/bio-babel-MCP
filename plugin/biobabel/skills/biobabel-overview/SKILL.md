@@ -1,6 +1,6 @@
 ---
 name: biobabel-overview
-description: 27 MCP tools for Bio-Babel — discover, plan, translate, retrofit. Read this first when the user mentions an R bioinformatics package or a Bio-Babel name.
+description: 22 MCP tools for Bio-Babel — discover, plan, translate, retrofit. Read this first when the user mentions an R bioinformatics package or a Bio-Babel name.
 biobabel_version: 0.1.0
 ---
 
@@ -18,8 +18,8 @@ Pick the route by what the user is doing:
 
 | User says                                                        | Reach for                                            |
 |------------------------------------------------------------------|------------------------------------------------------|
-| "run pseudotime / trajectory / monocle3 / copykat / clustering"  | `biobabel.recommend` → `biobabel.plan_workflow` (Class A) |
-| "draw / plot / custom geom / grid / ggplot2 / pheatmap"          | `biobabel.recommend` → `biobabel.describe_concept` + `list_idioms` (Class B) |
+| "run pseudotime / trajectory / monocle3 / copykat / clustering"  | `biobabel.list_packages` (read triggers/tags, pick the Class A package) → `biobabel.plan_workflow` |
+| "draw / plot / custom geom / grid / ggplot2 / pheatmap"          | `biobabel.list_packages` (read triggers/tags, pick the Class B package) → `biobabel.describe_concept` + `list_idioms` |
 | pastes R syntax (`library(`, `<-`, `%>%`)                        | `/biobabel:r-translate <snippet>`                    |
 | pastes a whole .R script                                         | `/biobabel:migrate <path>`                           |
 | "add biobabel support to my package"                             | invoke the **contract-retrofitter** subagent         |
