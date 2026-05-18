@@ -8,8 +8,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "biobabel"
-version = "0.1.0"
-description = "Agent control plane for Bio-Babel: discover, translate, plan, scaffold, verify R-to-Python bioinformatics ports via MCP."
+version = "0.2.0"
+description = "Agent control plane for Bio-Babel: discover, plan, validate, and run registered R-to-Python bioinformatics ports via MCP."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"

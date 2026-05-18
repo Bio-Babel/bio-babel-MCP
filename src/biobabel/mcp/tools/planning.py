@@ -79,6 +79,6 @@ def check_prerequisites(
         outputs={
             "satisfied": result.satisfied,
             "missing": result.missing,
-            "fix_suggestions": result.fix_suggestions,
+            "fix_candidates": result.fix_candidates,
         },
     )

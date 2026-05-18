@@ -3,7 +3,7 @@ name: use-scales
 description: scales-python — axis transforms, breaks, palettes, formatters (R scales port)
 contract_class: grammar
 package_version: 1.4.0.9000
-biobabel_version: 0.1.0
+biobabel_version: 0.2.0
 generated_from_registry_commit: 0ad0109db8c240c08e19c3e46a9956ac47d3c14dc70969692b0d09a5a5b2af3b
 ---
 

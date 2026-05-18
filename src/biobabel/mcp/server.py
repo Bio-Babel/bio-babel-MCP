@@ -15,8 +15,10 @@ Surface trim history:
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from biobabel._registry.builder import Registry, build_registry
@@ -30,6 +32,7 @@ from biobabel.mcp.tools import (
     validation,
 )
 from biobabel.mcp.tools.runtime import ProgressEmitter, _noop_progress
+from biobabel.mcp.tracing import record_runtime_trace
 
 ToolHandler = Callable[..., dict[str, Any]]
 
@@ -90,7 +93,7 @@ class BiobabelMCPServer:
         # packages from biobabel.list_packages' triggers/tags/capabilities.
         self._add("biobabel.plan_workflow", "planning",
                   lambda **kw: planning.plan_workflow(reg, **kw),
-                  "Task → WorkflowContract or ad-hoc DAG")
+                  "Task → declared WorkflowContract or source='none'")
         self._add("biobabel.check_prerequisites", "planning",
                   lambda **kw: planning.check_prerequisites(reg, sess, **kw),
                   "Validate a step against the current adata snapshot")
@@ -191,9 +194,46 @@ class BiobabelMCPServer:
             from biobabel.mcp.envelope import error
             return error(name, error_code="unknown_tool", message=f"no tool '{name}'")
         spec = self._tools[name]
+        if spec.group == "runtime":
+            return self._call_runtime_tool(spec, progress=progress, kwargs=kwargs)
         if spec.accepts_progress:
             return spec.handler(progress or _noop_progress, **kwargs)
         return spec.handler(**kwargs)
+
+    def _call_runtime_tool(
+        self,
+        spec: ToolSpec,
+        *,
+        progress: ProgressEmitter | None,
+        kwargs: dict[str, Any],
+    ) -> dict[str, Any]:
+        started_at = datetime.now(timezone.utc)
+        start = time.perf_counter()
+        try:
+            env = spec.handler(progress or _noop_progress, **kwargs)
+        except Exception as exc:
+            duration_ms = (time.perf_counter() - start) * 1000
+            record_runtime_trace(
+                self.sessions,
+                spec.name,
+                kwargs=kwargs,
+                envelope=None,
+                started_at=started_at,
+                duration_ms=duration_ms,
+                exception=exc,
+            )
+            raise
+
+        duration_ms = (time.perf_counter() - start) * 1000
+        record_runtime_trace(
+            self.sessions,
+            spec.name,
+            kwargs=kwargs,
+            envelope=env,
+            started_at=started_at,
+            duration_ms=duration_ms,
+        )
+        return env
 
 
 def build_server() -> BiobabelMCPServer:

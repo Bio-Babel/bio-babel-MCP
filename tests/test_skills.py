@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from biobabel._exporters.skills import build_skills
 
@@ -35,6 +36,36 @@ def test_overview_frontmatter_has_biobabel_version(tmp_path, registry):
     front = re.search(r"\A---\n(.*?)\n---\n", body, re.DOTALL)
     assert front is not None
     assert "biobabel_version:" in front.group(1)
+
+
+def test_overview_reflects_current_mcp_surface(tmp_path, registry):
+    """The generated overview must not drift back to removed consumer tools."""
+    out = tmp_path / "skills"
+    build_skills(registry, out)
+    body = (out / "biobabel-overview" / "SKILL.md").read_text()
+    assert "20 MCP tools" in body
+    for stale in (
+        "biobabel.r_translate",
+        "/biobabel:r-translate",
+        "/biobabel:migrate",
+        "contract-retrofitter",
+        "r-parity-auditor",
+    ):
+        assert stale not in body
+
+
+def test_shipped_plugin_overview_matches_current_surface():
+    root = Path(__file__).resolve().parent.parent
+    body = (root / "plugin" / "biobabel" / "skills" / "biobabel-overview" / "SKILL.md").read_text()
+    assert "20 MCP tools" in body
+    for stale in (
+        "biobabel.r_translate",
+        "/biobabel:r-translate",
+        "/biobabel:migrate",
+        "contract-retrofitter",
+        "r-parity-auditor",
+    ):
+        assert stale not in body
 
 
 def test_packages_without_skill_md_are_skipped_with_reason(tmp_path, registry):

@@ -3,7 +3,7 @@ name: use-monocle3
 description: monocle3-python — single-cell trajectory & pseudotime (R Monocle3 port)
 contract_class: analysis
 package_version: 1.4.26
-biobabel_version: 0.1.0
+biobabel_version: 0.2.0
 generated_from_registry_commit: 9ca370c4d459b960aaef801a09b394fc6e5b9721454d09195bafe73c954da190
 ---
 

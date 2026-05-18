@@ -24,6 +24,7 @@ import json
 import sys
 from typing import Any, TextIO
 
+from biobabel import __version__
 from biobabel.mcp.server import BiobabelMCPServer
 
 PROTOCOL_VERSION = "2024-11-05"
@@ -67,7 +68,7 @@ class StdioTransport:
                     msg_id,
                     {
                         "protocolVersion": PROTOCOL_VERSION,
-                        "serverInfo": {"name": "biobabel", "version": "0.1.0"},
+                        "serverInfo": {"name": "biobabel", "version": __version__},
                         "capabilities": {"tools": {"listChanged": False}},
                     },
                 )

@@ -13,8 +13,10 @@ from biobabel._runtime.session import SessionStore
 def test_get_or_create_default_creates_lazily(tmp_path):
     store = SessionStore(root=tmp_path / "sessions")
     assert store.list_sessions() == []
+    assert store.get_default() is None
     sess = store.get_or_create_default()
     assert sess.session_id in store.list_sessions()
+    assert store.get_default() is sess
 
 
 def test_get_or_create_default_is_idempotent(tmp_path):
@@ -31,6 +33,7 @@ def test_default_recreated_after_explicit_delete(tmp_path):
     store = SessionStore(root=tmp_path / "sessions")
     s1 = store.get_or_create_default()
     store.delete(s1.session_id)
+    assert store.get_default() is None
     s2 = store.get_or_create_default()
     assert s2 is not s1
     assert s2.session_id != s1.session_id

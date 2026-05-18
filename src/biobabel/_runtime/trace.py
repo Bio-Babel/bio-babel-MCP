@@ -32,6 +32,8 @@ class TraceStore:
         self._records.append(rec)
 
     def list_recent(self, n: int = 50) -> list[TraceRecord]:
+        if n <= 0:
+            return []
         return list(self._records)[-n:][::-1]
 
     def __len__(self) -> int:

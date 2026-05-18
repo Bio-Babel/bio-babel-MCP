@@ -12,7 +12,7 @@
 | **Producer side** — upstream package | Bio-Babel maintainers (you) | a `_biobabel/` directory with YAML contracts + Python recipes, plus a Python entry-point declaration |
 | **Consumer side** — end user / IDE  | end users running `biobabel install --target X` | wiring that points their MCP-aware IDE (Claude Code, Cursor, Continue) at the local `biobabel-mcp` server |
 
-biobabel sits in the middle. At runtime it discovers the producer-side contracts via Python entry points and exposes them to the consumer side as 22 MCP tools across 6 groups.
+biobabel sits in the middle. At runtime it discovers the producer-side contracts via Python entry points and exposes them to the consumer side as 20 MCP tools across 6 groups.
 
 ```
 ┌──────────────────────────────────┐         ┌──────────────────────────────────┐
@@ -54,7 +54,7 @@ Class-specific additions:
 | `idioms/`        | —                  | ✓                 | ✓                |
 | `anti_patterns/` | —                  | ✓                 | ✓                |
 
-**See it in practice**: `Bio-Babel-public/rgrid-python/grid_py/_biobabel/` is the canonical Class B example. 5 concepts, 6 idioms, 3 anti-patterns, 3 recipes, 15 R-translations.
+**See it in practice**: `Bio-Babel-public/rgrid-python/grid_py/_biobabel/` is the canonical Class B example. 5 concepts, 6 idioms, 3 anti-patterns, and 3 recipes.
 
 ### Producer side — the entry point
 
@@ -138,7 +138,7 @@ Each `--target` writes the IDE-specific config file so the IDE knows it has an M
 |-----------------|-------------------------------------------|--------------|
 | `claude_code`   | `~/.claude/settings.json`                 | "There's a stdio MCP server, launch it with `biobabel-mcp`" |
 | `cursor`        | `~/.cursor/mcp.json` + `<workspace>/.cursor/rules/biobabel.md` | server config + a rule reminding the LLM to use biobabel when it sees R syntax |
-| `continue`      | `~/.continue/config.json`                 | adds biobabel to Continue's MCP server list |
+| `continue`      | `~/.continue/config.yaml`                 | adds biobabel to Continue's MCP server list |
 | `openai`        | `<workspace>/biobabel.tools.json` + system prompt | for OpenAI-Assistants-style bridges |
 | `all`           | does claude_code + cursor + continue      |              |
 
@@ -193,16 +193,22 @@ LLM:  biobabel.check_code(code, package="grid_py")
 Returns: {issues: []}   (no anti-pattern hit)
         │
         ▼
-LLM:  biobabel.create_session()  → session_id
-LLM:  biobabel.run_code(session_id, code)
+LLM:  biobabel.run_code(code)
         │
         │  subprocess guardrail: rlimits + AST scan + workspace cwd
+        │  default session is created lazily on the first runtime call
         │  (not a security boundary — see ADR-0006)
         │  user code imports grid_py, draws, writes multi_panel.png
         │  guardrail harvests new files → ArtifactHandle with provenance
+        │  runtime trace records tool, duration, ok/error, handles, artifacts,
+        │  and code hash (not raw code)
         │
         ▼
-Returns: {ok: true, new_artifacts: [{artifact_id, path, content_hash, ...}]}
+Returns: {ok: true, session_id, active_handles, new_artifacts: [...]}
+        │
+        ▼
+Optional: biobabel.list_traces() returns recent runtime calls for the default
+session; passing session_id reads that explicit session.
         │
         ▼
 LLM shows the artifact path or content to the user.
@@ -214,7 +220,7 @@ Note that biobabel itself **does not draw anything** and **does not understand g
 2. Reads their declared concepts / idioms / anti-patterns (YAML)
 3. Surfaces them as MCP tools (envelope + dispatch)
 4. Guards execution against agent mistakes (subprocess + rlimits + AST scan; **not** a security boundary — see ADR-0006)
-5. Records provenance (artifact hashes, code hashes, package versions)
+5. Records provenance and lightweight per-session runtime traces (artifact hashes, code hashes, package versions, handle refs)
 
 The actual *knowledge* lives in each upstream package's `_biobabel/`.
 
@@ -224,29 +230,29 @@ The actual *knowledge* lives in each upstream package's `_biobabel/`.
 2. **Entry-point only.** biobabel never scans `site-packages/` looking for packages. The producer must declare itself.
 3. **Subprocess guardrail only.** No `exec()`, no thread isolation, no in-process eval. All user-generated code runs via `_runtime/sandbox.py` — but this is a *guardrail against agent mistakes*, not a security boundary. See ADR-0006 for the threat model and what is explicitly out of scope.
 4. **MCP-first.** Every agent-facing capability is reachable through a tool name like `biobabel.X`. The CLI exists for human maintainers.
-5. **No silent degradation.** rpy2 not installed → `biobabel.r_verify` raises with a clear message. There is no "best effort" mode.
-6. **One schema version at a time.** Manifest schema v1 is additive within itself. Breaking changes require an explicit v2 (with plan-level approval).
+5. **No silent degradation.** Missing manifests, broken entry points, duplicate ids, and unregistered detector ids surface as explicit discovery errors or tool errors. There is no "best effort" reflection mode.
+6. **One schema version at a time.** Manifest schema v2 is additive within itself. Breaking changes require an explicit v3 (with plan-level approval).
 
 ## Where the code lives
 
 ```
 biobabel/
 ├── src/biobabel/
-│   ├── manifest_api.py         ← the ONLY public Python surface (Pydantic models)
-│   ├── _registry/              ← entry-point discovery + lockfile + diff
+│   ├── manifest_api.py         ← public contract schemas (Pydantic models)
+│   ├── detector_api.py         ← public detector callable types
+│   ├── _registry/              ← entry-point discovery + in-memory indexes
 │   ├── _contracts/             ← _biobabel/ directory validator
 │   ├── _runtime/               ← subprocess guardrail, session, artifacts, trace
-│   ├── _planner/               ← recommend / plan_workflow / check_prereq
+│   ├── _planner/               ← search / plan_workflow / check_prereq
 │   ├── _concept/               ← idiom search + anti-pattern AST detector
-│   ├── _r_python/              ← R↔Py translator + migrator + (rpy2 opt-in) verifier
 │   ├── _retrofit/              ← `biobabel new contract` — introspect an existing pkg, emit _biobabel/ skeleton
 │   ├── _exporters/             ← biobabel install --target X
-│   ├── mcp/                    ← 22 tools, JSON-RPC stdio transport
+│   ├── mcp/                    ← 20 tools, JSON-RPC stdio transport
 │   └── cli/                    ← biobabel CLI (click)
 └── tests/                      ← unit tests covering all of the above
 ```
 
-The leading underscore is intentional: everything except `manifest_api` is private and may change. Upstream packages should import **only** `from biobabel.manifest_api import ...`.
+The leading underscore is intentional: everything except `manifest_api` and `detector_api` is private and may change. Upstream packages should import **only** `from biobabel.manifest_api import ...` and, when registering AST anti-pattern detectors, `from biobabel.detector_api import ...`.
 
 ## Naming convention: entry-point key is the import name, not the distribution name
 

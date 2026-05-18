@@ -171,6 +171,17 @@ class SessionStore:
             self._default_id = sess.session_id
             return sess
 
+    def get_default(self) -> Session | None:
+        """Return the existing default session without creating one.
+
+        ``list_traces`` uses this read-only path so asking for traces before
+        any runtime call does not accidentally create an empty session.
+        """
+        with self._lock:
+            if self._default_id is None:
+                return None
+            return self._sessions.get(self._default_id)
+
     def list_sessions(self) -> list[str]:
         return list(self._sessions)
 

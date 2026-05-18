@@ -13,7 +13,12 @@ from biobabel._runtime.session import AdataHandle
 class PrereqResult:
     satisfied: bool
     missing: list[str] = field(default_factory=list)
-    fix_suggestions: list[str] = field(default_factory=list)
+    # For each missing slot, every registered function that writes it.
+    # biobabel does not pick one — the LLM ranks candidates against the
+    # user's intent (e.g. PCA vs ICA when both write obsm.X_dr). An empty
+    # list means the slot is missing AND no producer declared a writer
+    # for it; that itself is information the consumer should see.
+    fix_candidates: dict[str, list[str]] = field(default_factory=dict)
 
 
 def check_prerequisites(
@@ -44,11 +49,14 @@ def check_prerequisites(
     if not missing:
         return PrereqResult(satisfied=True)
 
-    fixes: list[str] = []
+    fix_candidates: dict[str, list[str]] = {}
     for slot in missing:
-        for _, fn in registry._function_by_id.values():
-            if slot in fn.writes:
-                fixes.append(fn.id)
-                break
+        fix_candidates[slot] = [
+            fn.id
+            for _, fn in registry._function_by_id.values()
+            if slot in fn.writes
+        ]
 
-    return PrereqResult(satisfied=False, missing=missing, fix_suggestions=fixes)
+    return PrereqResult(
+        satisfied=False, missing=missing, fix_candidates=fix_candidates
+    )

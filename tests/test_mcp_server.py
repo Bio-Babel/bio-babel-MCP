@@ -187,6 +187,116 @@ def test_health_outputs_include_handles_by_session(registry, tmp_path):
         assert slot in only_session
 
 
+def test_list_traces_without_runtime_does_not_create_default_session(registry, tmp_path):
+    store = SessionStore(root=tmp_path / "sessions")
+    server = BiobabelMCPServer(registry=registry, sessions=store)
+    env = server.call("biobabel.list_traces")
+    assert env["ok"]
+    assert env["outputs"] == {"session_id": None, "traces": []}
+    assert store.list_sessions() == []
+
+
+def test_runtime_success_records_trace_in_default_session(registry, tmp_path):
+    store = SessionStore(root=tmp_path / "sessions")
+    server = BiobabelMCPServer(registry=registry, sessions=store)
+    code = "from pathlib import Path\nPath('trace_artifact.txt').write_text('payload')"
+
+    run_env = server.call("biobabel.run_code", code=code)
+    assert run_env["ok"], run_env
+    artifact_id = run_env["outputs"]["new_artifacts"][0]["artifact_id"]
+
+    traces_env = server.call("biobabel.list_traces")
+    traces = traces_env["outputs"]["traces"]
+    assert traces_env["outputs"]["session_id"] == run_env["outputs"]["session_id"]
+    assert len(traces) == 1
+    trace = traces[0]
+    assert trace["tool_name"] == "biobabel.run_code"
+    assert trace["ok"] is True
+    assert trace["error_code"] == ""
+    assert trace["handle_refs_in"] == []
+    assert trace["handle_refs_out"] == [artifact_id]
+    assert trace["args_summary"]["code_hash"] == run_env["outputs"]["code_hash"]
+    assert "session_id" not in trace  # already at outputs top level
+    assert "write_text" not in str(trace)
+    assert "payload" not in str(trace)
+
+
+def test_load_dataframe_trace_records_output_handle_and_path_summary(registry, tmp_path):
+    csv_path = tmp_path / "input.csv"
+    csv_path.write_text("a,b\n1,2\n", encoding="utf-8")
+    store = SessionStore(root=tmp_path / "sessions")
+    server = BiobabelMCPServer(registry=registry, sessions=store)
+
+    load_env = server.call("biobabel.load_dataframe", path=str(csv_path))
+    assert load_env["ok"], load_env
+    trace = server.call("biobabel.list_traces")["outputs"]["traces"][0]
+    assert trace["tool_name"] == "biobabel.load_dataframe"
+    assert trace["handle_refs_out"] == [load_env["outputs"]["df_id"]]
+    assert trace["args_summary"]["path_name"] == "input.csv"
+    assert trace["args_summary"]["path_suffix"] == ".csv"
+    assert str(tmp_path) not in str(trace)
+
+
+def test_get_artifact_trace_records_artifact_as_input_ref(registry, tmp_path):
+    store = SessionStore(root=tmp_path / "sessions")
+    server = BiobabelMCPServer(registry=registry, sessions=store)
+    run_env = server.call(
+        "biobabel.run_code",
+        code="from pathlib import Path\nPath('artifact.txt').write_text('payload')",
+    )
+    artifact_id = run_env["outputs"]["new_artifacts"][0]["artifact_id"]
+
+    artifact_env = server.call("biobabel.get_artifact", artifact_id=artifact_id)
+    assert artifact_env["ok"], artifact_env
+    trace = server.call("biobabel.list_traces")["outputs"]["traces"][0]
+    assert trace["tool_name"] == "biobabel.get_artifact"
+    assert trace["handle_refs_in"] == [artifact_id]
+    assert trace["handle_refs_out"] == []
+
+
+def test_runtime_error_records_trace_without_raw_code(registry, tmp_path):
+    store = SessionStore(root=tmp_path / "sessions")
+    server = BiobabelMCPServer(registry=registry, sessions=store)
+    code = "import subprocess\nprint('should not run')"
+
+    run_env = server.call("biobabel.run_code", code=code)
+    assert not run_env["ok"]
+    assert run_env["error_code"] == "security_violation"
+
+    traces = server.call("biobabel.list_traces")["outputs"]["traces"]
+    assert len(traces) == 1
+    trace = traces[0]
+    assert trace["tool_name"] == "biobabel.run_code"
+    assert trace["ok"] is False
+    assert trace["error_code"] == "security_violation"
+    assert trace["args_summary"]["code_hash"] == run_env["details"]["code_hash"]
+    assert trace["args_summary"]["result"]["stderr_len"] > 0
+    assert "subprocess" not in str(trace)
+    assert "should not run" not in str(trace)
+
+
+def test_non_runtime_tools_do_not_record_traces(registry, tmp_path):
+    store = SessionStore(root=tmp_path / "sessions")
+    server = BiobabelMCPServer(registry=registry, sessions=store)
+    server.call("biobabel.run_code", code="print('hi')")
+    server.call("biobabel.list_packages")
+    server.call("biobabel.check_code", code="print('hi')")
+    traces = server.call("biobabel.list_traces")["outputs"]["traces"]
+    assert [t["tool_name"] for t in traces] == ["biobabel.run_code"]
+
+
+def test_list_traces_accepts_explicit_session_id(registry, tmp_path):
+    store = SessionStore(root=tmp_path / "sessions")
+    server = BiobabelMCPServer(registry=registry, sessions=store)
+    run_env = server.call("biobabel.run_code", code="print('hi')")
+    sid = run_env["outputs"]["session_id"]
+
+    traces_env = server.call("biobabel.list_traces", session_id=sid)
+    assert traces_env["ok"]
+    assert traces_env["outputs"]["session_id"] == sid
+    assert len(traces_env["outputs"]["traces"]) == 1
+
+
 def test_runtime_tool_count_is_six(registry):
     """Group 5 (Runtime) shrank 8 → 6: create_session + list_handles removed."""
     server = BiobabelMCPServer(registry=registry, sessions=SessionStore())

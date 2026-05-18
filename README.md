@@ -8,7 +8,7 @@
 
 | Scenario | Example ask | What biobabel gives the agent |
 |----------|-------------|-------------------------------|
-| Run an analysis using a registered package | *"use monocle3 to compute pseudotime on this AnnData"* | state-machine pipeline contract (6 steps with `requires` / `writes` / `next`), per-step prerequisite check, sandboxed execution |
+| Run an analysis using a registered package | *"use monocle3 to compute pseudotime on this AnnData"* | state-machine pipeline contract (6 steps with `requires` / `writes` / `next`), per-step prerequisite check, guarded subprocess execution |
 | Build new Python code on a foundation package | *"draw an N×N panel grid using grid_py"* | concept layer (Viewport / Grob / Unit / Gpar invariants), idiom library, AST-based anti-pattern detection |
 
 ## Install

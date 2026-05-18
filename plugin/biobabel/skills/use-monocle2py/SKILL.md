@@ -3,7 +3,7 @@ name: use-monocle2py
 description: monocle2py — single-cell DDRTree trajectory + BEAM branch analysis (R Monocle2 port)
 contract_class: analysis
 package_version: 2.9.0
-biobabel_version: 0.1.0
+biobabel_version: 0.2.0
 generated_from_registry_commit: ce602040e2dff8667971ab96b9f115480a942b8221b4e6d851f563967c1dd6e9
 ---
 

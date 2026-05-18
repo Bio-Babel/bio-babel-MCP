@@ -41,19 +41,27 @@ def health(registry: Registry, sessions: SessionStore) -> dict[str, Any]:
     )
 
 
-def list_traces(sessions: SessionStore, *, session_id: str, n: int = 50) -> dict[str, Any]:
-    sess = sessions.get(session_id)
+def list_traces(
+    sessions: SessionStore, *, session_id: str | None = None, n: int = 50
+) -> dict[str, Any]:
+    sess = sessions.get(session_id) if session_id is not None else sessions.get_default()
     if sess is None:
+        summary = (
+            "session not found, returning empty"
+            if session_id is not None
+            else "no default session yet, returning empty"
+        )
         return success(
             "biobabel.list_traces",
-            summary="session not found, returning empty",
-            outputs={"traces": []},
+            summary=summary,
+            outputs={"session_id": session_id, "traces": []},
         )
     traces = sess.list_traces(n=n)
     return success(
         "biobabel.list_traces",
         summary=f"{len(traces)} trace(s)",
         outputs={
+            "session_id": sess.session_id,
             "traces": [
                 {
                     "trace_id": t.trace_id,
@@ -62,6 +70,9 @@ def list_traces(sessions: SessionStore, *, session_id: str, n: int = 50) -> dict
                     "duration_ms": t.duration_ms,
                     "ok": t.ok,
                     "error_code": t.error_code,
+                    "handle_refs_in": t.handle_refs_in,
+                    "handle_refs_out": t.handle_refs_out,
+                    "args_summary": t.args_summary,
                 }
                 for t in traces
             ]

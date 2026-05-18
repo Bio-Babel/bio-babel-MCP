@@ -3,7 +3,7 @@ name: use-ggplot2-py
 description: ggplot2-python — grammar of graphics for Python (R ggplot2 port)
 contract_class: mixed
 package_version: 4.0.2.9000.post3
-biobabel_version: 0.1.0
+biobabel_version: 0.2.0
 generated_from_registry_commit: 8f4ba6c1fa7f1b03a26cacc847b127de45b061815aa1e2da548a6878b976cb5b
 ---
 

@@ -74,8 +74,64 @@ def test_check_prerequisites_missing_returns_fix(registry):
     result = check_prerequisites(registry, step, adata)
     assert not result.satisfied
     assert "obs.Size_Factor" in result.missing
-    # Fix suggestion should reach for the function that writes Size_Factor
-    assert any("size_factor" in s.lower() for s in result.fix_suggestions)
+    # Every registered function that writes the slot should surface; biobabel
+    # must not pre-pick one (that's the LLM's call given the user's intent).
+    candidates = result.fix_candidates["obs.Size_Factor"]
+    assert candidates, "expected at least one fix candidate for obs.Size_Factor"
+    assert any("size_factor" in fn_id.lower() for fn_id in candidates)
+
+
+def test_check_prerequisites_surfaces_all_writers_per_slot():
+    """When multiple functions write the same slot, biobabel must surface
+    every candidate; choosing among them is intent-driven (e.g. PCA vs ICA
+    when both write obsm.X_dr) and therefore the LLM's call, not biobabel's.
+    Regression guard for the legacy first-match-wins `break`."""
+    from biobabel._registry.builder import Registry
+    from biobabel.manifest_api import FunctionContract
+
+    reg = Registry()
+    pca = FunctionContract(
+        id="pkg.run_pca",
+        import_path="pkg.run_pca",
+        execution_class="adata_mutation",
+        writes=["obsm.X_dr"],
+    )
+    ica = FunctionContract(
+        id="pkg.run_ica",
+        import_path="pkg.run_ica",
+        execution_class="adata_mutation",
+        writes=["obsm.X_dr"],
+    )
+    reg._function_by_id["pkg.run_pca"] = ("pkg", pca)
+    reg._function_by_id["pkg.run_ica"] = ("pkg", ica)
+
+    adata = AdataHandle(
+        adata_id="a", obs_keys=[], obsm_keys=[], var_keys=[], uns_keys=[], layers=[]
+    )
+    step = PlanStep(call="downstream", requires=["obsm.X_dr"])
+    result = check_prerequisites(reg, step, adata)
+
+    assert not result.satisfied
+    candidates = result.fix_candidates["obsm.X_dr"]
+    assert set(candidates) == {"pkg.run_pca", "pkg.run_ica"}
+
+
+def test_check_prerequisites_records_slot_with_no_writer():
+    """A missing slot for which no registered function declares `writes`
+    still appears in fix_candidates with an empty list, so the consumer
+    sees biobabel knows the slot is missing AND no producer offers a writer
+    (rather than silently omitting the slot from the candidates map)."""
+    from biobabel._registry.builder import Registry
+
+    reg = Registry()  # no functions registered
+    adata = AdataHandle(
+        adata_id="a", obs_keys=[], obsm_keys=[], var_keys=[], uns_keys=[], layers=[]
+    )
+    step = PlanStep(call="downstream", requires=["obsm.orphan_slot"])
+    result = check_prerequisites(reg, step, adata)
+
+    assert not result.satisfied
+    assert result.fix_candidates == {"obsm.orphan_slot": []}
 
 
 def test_check_prerequisites_x_semantic_is_advisory_not_missing(registry):
