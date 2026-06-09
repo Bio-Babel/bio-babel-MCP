@@ -210,7 +210,7 @@ def cmd_build_skills(out_dir: str) -> None:
 
 @main_cli.command("install")
 @click.option("--target",
-              type=click.Choice(["claude_code", "cursor", "continue", "openai", "all"]),
+              type=click.Choice(["claude_code", "cursor", "continue", "codex", "openai", "all"]),
               required=True)
 @click.option("--workspace", type=click.Path(), default=".",
               help="Workspace path for per-project files (cursor rules, etc.)")
@@ -223,7 +223,7 @@ def cmd_install(target: str, workspace: str) -> None:
 
 @main_cli.command("uninstall")
 @click.option("--target",
-              type=click.Choice(["claude_code", "cursor", "continue", "openai", "all"]),
+              type=click.Choice(["claude_code", "cursor", "continue", "codex", "openai", "all"]),
               required=True)
 @click.option("--workspace", type=click.Path(), default=".",
               help="Workspace path for per-project files (cursor rules, openai files).")

@@ -10,7 +10,7 @@
 | Side | Who writes here | What they write |
 |------|-----------------|-----------------|
 | **Producer side** — upstream package | Bio-Babel maintainers (you) | a `_biobabel/` directory with YAML contracts, plus a Python entry-point declaration |
-| **Consumer side** — end user / IDE  | end users running `biobabel install --target X` | wiring that points their MCP-aware IDE (Claude Code, Cursor, Continue) at the local `biobabel-mcp` server |
+| **Consumer side** — end user / IDE  | end users running `biobabel install --target X` | wiring that points their MCP-aware IDE (Claude Code, Cursor, Continue, Codex) at the local `biobabel-mcp` server |
 
 biobabel sits in the middle. At runtime it discovers the producer-side contracts via Python entry points and exposes them to the consumer side as 15 read-only MCP tools for contract discovery, snippet linting, and health metadata. biobabel does not execute code — running it is the calling agent's job.
 

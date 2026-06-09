@@ -1,0 +1,20 @@
+{
+  "name": "bio-babel",
+  "interface": {
+    "displayName": "Bio-Babel"
+  },
+  "plugins": [
+    {
+      "name": "biobabel",
+      "source": {
+        "source": "local",
+        "path": "./plugin/biobabel-codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

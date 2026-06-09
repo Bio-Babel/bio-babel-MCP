@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+import tomlkit
 import yaml
 
 from biobabel._exporters.installer import install, uninstall
@@ -17,10 +18,12 @@ def ide_homes(tmp_path, monkeypatch):
     claude = tmp_path / "claude"
     cursor = tmp_path / "cursor"
     cont = tmp_path / "continue"
+    codex = tmp_path / "codex"
     monkeypatch.setenv("CLAUDE_HOME", str(claude))
     monkeypatch.setenv("CURSOR_HOME", str(cursor))
     monkeypatch.setenv("CONTINUE_HOME", str(cont))
-    return {"claude": claude, "cursor": cursor, "continue": cont}
+    monkeypatch.setenv("CODEX_HOME", str(codex))
+    return {"claude": claude, "cursor": cursor, "continue": cont, "codex": codex}
 
 
 def test_claude_code_writes_settings_json(ide_homes):
@@ -108,7 +111,47 @@ def test_continue_rejects_malformed_existing_field(ide_homes):
         install("continue", workspace=Path("/tmp/wsX"))
 
 
-def test_all_target_installs_all_three(ide_homes, tmp_path):
+def test_codex_writes_config_toml(ide_homes):
+    written = install("codex", workspace=Path("/tmp/wsX"))
+    assert len(written) == 1
+    assert written[0].name == "config.toml"
+    doc = tomlkit.parse(written[0].read_text())
+    assert doc["mcp_servers"]["biobabel"]["command"] == "biobabel-mcp"
+    assert list(doc["mcp_servers"]["biobabel"]["args"]) == []
+
+
+def test_codex_preserves_existing_config_and_comments(ide_homes):
+    home = ide_homes["codex"]
+    home.mkdir()
+    (home / "config.toml").write_text(
+        '# my codex config\nmodel = "o3"\n\n[mcp_servers.other]\ncommand = "other"\n'
+    )
+    install("codex", workspace=Path("/tmp/wsX"))
+    text = (home / "config.toml").read_text()
+    assert "# my codex config" in text          # comment survives
+    doc = tomlkit.parse(text)
+    assert doc["model"] == "o3"
+    assert "other" in doc["mcp_servers"]
+    assert "biobabel" in doc["mcp_servers"]
+
+
+def test_codex_is_idempotent(ide_homes):
+    install("codex", workspace=Path("/tmp/wsX"))
+    before = (ide_homes["codex"] / "config.toml").read_text()
+    install("codex", workspace=Path("/tmp/wsX"))
+    after = (ide_homes["codex"] / "config.toml").read_text()
+    assert before == after
+
+
+def test_codex_rejects_malformed_mcp_servers_field(ide_homes):
+    home = ide_homes["codex"]
+    home.mkdir()
+    (home / "config.toml").write_text('mcp_servers = "this should have been a table"\n')
+    with pytest.raises(RuntimeError, match="must be a table"):
+        install("codex", workspace=Path("/tmp/wsX"))
+
+
+def test_all_target_installs_every_ide(ide_homes, tmp_path):
     ws = tmp_path / "ws"
     ws.mkdir()
     written = install("all", workspace=ws)
@@ -116,6 +159,7 @@ def test_all_target_installs_all_three(ide_homes, tmp_path):
     assert "claude" in paths_str
     assert "cursor" in paths_str
     assert "continue" in paths_str
+    assert "codex" in paths_str
 
 
 def test_unknown_target_raises():
@@ -252,6 +296,35 @@ def test_uninstall_continue_tolerates_malformed_mcp_servers_field(ide_homes):
         "this should have been a list"
 
 
+def test_uninstall_codex_removes_biobabel_table(ide_homes):
+    install("codex", workspace=Path("/tmp/wsX"))
+    report = uninstall("codex", workspace=Path("/tmp/wsX"))
+    doc = tomlkit.parse((ide_homes["codex"] / "config.toml").read_text())
+    assert "biobabel" not in doc.get("mcp_servers", {})
+    assert len(report.removed) == 1
+
+
+def test_uninstall_codex_preserves_other_servers_and_keys(ide_homes):
+    home = ide_homes["codex"]
+    home.mkdir()
+    (home / "config.toml").write_text(
+        'model = "o3"\n\n'
+        '[mcp_servers.biobabel]\ncommand = "biobabel-mcp"\nargs = []\n\n'
+        '[mcp_servers.other]\ncommand = "other"\n'
+    )
+    uninstall("codex", workspace=Path("/tmp/wsX"))
+    doc = tomlkit.parse((home / "config.toml").read_text())
+    assert "biobabel" not in doc["mcp_servers"]
+    assert "other" in doc["mcp_servers"]
+    assert doc["model"] == "o3"
+
+
+def test_uninstall_codex_idempotent_on_fresh_state(ide_homes):
+    report = uninstall("codex", workspace=Path("/tmp/wsX"))
+    assert report.removed == []
+    assert len(report.not_found) == 1
+
+
 def test_uninstall_openai_removes_unmodified_workspace_files(tmp_path):
     ws = tmp_path / "wsX"
     ws.mkdir()
@@ -273,7 +346,7 @@ def test_uninstall_openai_preserves_modified_prompt(tmp_path):
     assert (ws / "biobabel.system_prompt.md") in report.kept_modified
 
 
-def test_uninstall_all_runs_three_ide_targets_and_skips_openai(ide_homes, tmp_path):
+def test_uninstall_all_runs_every_ide_target_and_skips_openai(ide_homes, tmp_path):
     """Symmetric with install("all", ...) — IDE targets, openai opt-in."""
     ws = tmp_path / "wsX"
     ws.mkdir()
@@ -289,6 +362,8 @@ def test_uninstall_all_runs_three_ide_targets_and_skips_openai(ide_homes, tmp_pa
     assert "biobabel" not in cursor_cfg.get("mcpServers", {})
     cont_cfg = yaml.safe_load((ide_homes["continue"] / "config.yaml").read_text())
     assert [s for s in cont_cfg.get("mcpServers", []) if s.get("name") == "biobabel"] == []
+    codex_cfg = tomlkit.parse((ide_homes["codex"] / "config.toml").read_text())
+    assert "biobabel" not in codex_cfg.get("mcp_servers", {})
 
     # openai workspace files NOT cleaned (target opted out)
     assert (ws / "biobabel.tools.json").exists()

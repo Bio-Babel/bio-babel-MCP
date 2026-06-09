@@ -1,0 +1,31 @@
+{
+  "name": "biobabel",
+  "version": "0.1.0",
+  "description": "Bio-Babel agent consumption layer for Codex — discover exact schema-v1 contracts for Bio-Babel R-to-Python bioinformatics ports and validate snippets. Bundles 15 read-only MCP tools, an R-paste detector hook, and per-package skills.",
+  "author": {
+    "name": "Bio-Babel maintainers",
+    "url": "https://github.com/Bio-Babel"
+  },
+  "homepage": "https://github.com/Bio-Babel/bio-babel",
+  "repository": "https://github.com/Bio-Babel/bio-babel",
+  "license": "MIT",
+  "keywords": [
+    "bioinformatics",
+    "single-cell",
+    "ggplot2",
+    "monocle3",
+    "grid",
+    "r-to-python",
+    "mcp",
+    "codex"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "type": "plugin",
+    "displayName": "biobabel",
+    "shortDescription": "Exact contracts for Bio-Babel R-to-Python ports, plus snippet linting",
+    "category": "Developer Tools"
+  }
+}

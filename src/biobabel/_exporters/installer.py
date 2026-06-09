@@ -46,6 +46,22 @@ mcpServers:
     args: []
 ```
 
+### Codex CLI (`~/.codex/config.toml`)
+
+Codex registers MCP servers under TOML `[mcp_servers.<name>]` tables — note the
+snake_case key, unlike the JSON `mcpServers` used by Claude Code / Cursor. We
+merge with `tomlkit`, so the user's other Codex settings *and comments* survive.
+
+```toml
+[mcp_servers.biobabel]
+command = "biobabel-mcp"
+args = []
+```
+
+Codex's only per-project guidance surface is the shared, user-curated
+`AGENTS.md`; we do not touch it (no dedicated rules dir like Cursor's). Codex is
+therefore MCP-config-only, like Claude Code and Continue.
+
 ## Idempotence
 
 All installers are *additive and idempotent*: re-running `biobabel install`
@@ -61,15 +77,18 @@ For tests, the following env vars redirect the install paths:
 | claude_code | `CLAUDE_HOME`    | `~/.claude`          |
 | cursor      | `CURSOR_HOME`    | `~/.cursor`          |
 | continue    | `CONTINUE_HOME`  | `~/.continue`        |
+| codex       | `CODEX_HOME`     | `~/.codex`           |
 """
 
 from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import tomlkit
 import yaml
 
 MCP_SERVER_KEY = "biobabel"
@@ -97,6 +116,7 @@ def install(target: str, workspace: Path) -> list[Path]:
         out.extend(install("claude_code", workspace))
         out.extend(install("cursor", workspace))
         out.extend(install("continue", workspace))
+        out.extend(install("codex", workspace))
         return out
     if target == "claude_code":
         return _install_claude_code()
@@ -104,6 +124,8 @@ def install(target: str, workspace: Path) -> list[Path]:
         return _install_cursor(workspace)
     if target == "continue":
         return _install_continue()
+    if target == "codex":
+        return _install_codex()
     if target == "openai":
         return _install_openai(workspace)
     raise ValueError(f"unknown target: {target}")
@@ -164,6 +186,29 @@ def _install_continue() -> list[Path]:
     return [config_path]
 
 
+def _install_codex() -> list[Path]:
+    """Merge ``[mcp_servers.biobabel]`` into Codex's ``config.toml`` (TOML schema)."""
+    home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+    config_path = home / "config.toml"
+    doc = _read_toml(config_path)
+    servers = doc.get("mcp_servers")
+    if servers is None:
+        doc["mcp_servers"] = tomlkit.table(is_super_table=True)
+        servers = doc["mcp_servers"]
+    elif not isinstance(servers, Mapping):
+        raise RuntimeError(
+            f"{config_path}: 'mcp_servers' must be a table (TOML schema), "
+            f"found {type(servers).__name__}"
+        )
+    # Idempotence: overwrite the same key with the current value.
+    entry = tomlkit.table()
+    entry["command"] = MCP_SERVER_COMMAND
+    entry["args"] = []
+    servers[MCP_SERVER_KEY] = entry
+    _write_toml(config_path, doc)
+    return [config_path]
+
+
 def _install_openai(workspace: Path) -> list[Path]:
     tools_path = workspace / "biobabel.tools.json"
     tools_path.write_text(_openai_tools_text(), encoding="utf-8")
@@ -199,6 +244,17 @@ def _read_yaml(path: Path) -> dict:
 def _write_yaml(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
+
+
+def _read_toml(path: Path) -> tomlkit.TOMLDocument:
+    if path.is_file():
+        return tomlkit.parse(path.read_text(encoding="utf-8"))
+    return tomlkit.document()
+
+
+def _write_toml(path: Path, doc: tomlkit.TOMLDocument) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
 
 # --- Rule text used by Cursor + openai prompt ----------------------------
@@ -254,6 +310,7 @@ def uninstall(
         report.extend(uninstall("claude_code", workspace, dry_run=dry_run, force=force))
         report.extend(uninstall("cursor", workspace, dry_run=dry_run, force=force))
         report.extend(uninstall("continue", workspace, dry_run=dry_run, force=force))
+        report.extend(uninstall("codex", workspace, dry_run=dry_run, force=force))
         return report
     if target == "claude_code":
         return _uninstall_claude_code(dry_run=dry_run)
@@ -261,6 +318,8 @@ def uninstall(
         return _uninstall_cursor(workspace, dry_run=dry_run, force=force)
     if target == "continue":
         return _uninstall_continue(dry_run=dry_run)
+    if target == "codex":
+        return _uninstall_codex(dry_run=dry_run)
     if target == "openai":
         return _uninstall_openai(workspace, dry_run=dry_run, force=force)
     raise ValueError(f"unknown target: {target}")
@@ -322,6 +381,35 @@ def _uninstall_continue(*, dry_run: bool) -> UninstallReport:
     report.actions.append(
         f"{'DRY RUN — would remove' if dry_run else '+'} {config_path}"
         f" (mcpServers entry name='biobabel')"
+    )
+    return report
+
+
+def _uninstall_codex(*, dry_run: bool) -> UninstallReport:
+    home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+    config_path = home / "config.toml"
+    report = UninstallReport()
+    if not config_path.is_file():
+        report.not_found.append(config_path)
+        report.actions.append(f"· {config_path} (not found)")
+        return report
+    doc = _read_toml(config_path)
+    servers = doc.get("mcp_servers")
+    if not isinstance(servers, Mapping) or MCP_SERVER_KEY not in servers:
+        # Either missing or schema-divergent. Safe stance: report and skip,
+        # don't rewrite a file whose shape we don't recognize.
+        report.not_found.append(config_path)
+        report.actions.append(
+            f"· {config_path} (no mcp_servers.{MCP_SERVER_KEY} to remove)"
+        )
+        return report
+    del servers[MCP_SERVER_KEY]
+    if not dry_run:
+        _write_toml(config_path, doc)
+    report.removed.append(config_path)
+    report.actions.append(
+        f"{'DRY RUN — would remove' if dry_run else '+'} "
+        f"{config_path} (mcp_servers.{MCP_SERVER_KEY})"
     )
     return report
 

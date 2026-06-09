@@ -31,12 +31,26 @@ For **Claude Code** — full plugin (MCP + hook + skills):
 /plugin install biobabel@bio-babel
 ```
 
-For **Cursor / Continue / OpenAI / generic MCP** — bare MCP server:
+For **Codex** — full plugin (MCP + hook + skills), via Codex's own plugin format
+(`plugin/biobabel-codex/`, marketplace manifest at `.agents/plugins/marketplace.json`):
+
+```
+codex plugin marketplace add Bio-Babel/bio-babel
+# then enable "biobabel" from the /plugins menu
+```
+
+For **Cursor / Continue / OpenAI / generic MCP** (or just the bare MCP server for
+Claude Code / Codex) — no plugin, MCP wiring only:
 
 ```bash
-biobabel install   --target cursor     # or continue | openai | claude_code | all
+biobabel install   --target cursor     # or continue | codex | openai | claude_code | all
 biobabel uninstall --target cursor     # symmetric inverse; --dry-run to preview, --force to remove user-modified workspace files
 ```
+
+`--target codex` registers `biobabel-mcp` in `~/.codex/config.toml` under
+`[mcp_servers.biobabel]` (preserving your other Codex settings and comments);
+`--target all` now also wires Codex. Use the full plugin above instead if you
+also want the R-paste hook and the per-package skills.
 
 ## Register your own package into the ecosystem
 
