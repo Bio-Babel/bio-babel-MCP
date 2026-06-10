@@ -505,7 +505,7 @@ def _remove_workspace_file(
 
 _BIOBABEL_RULE = """# biobabel
 
-biobabel is the agent control plane for the Bio-Babel ecosystem (R-to-Python
+biobabel is the read-only contract layer for the Bio-Babel ecosystem (R-to-Python
 bioinformatics ports). When the user mentions ggplot2, monocle2py, monocle3,
 pheatmap, ComplexHeatmap, grid_py, gtable, scales, etc., reach for the
 biobabel.* MCP tools first instead of guessing the Python API from R memory.

@@ -137,7 +137,7 @@ def _render_overview(registry: Registry) -> str:
         "",
         "# biobabel",
         "",
-        f"Bio-Babel's agent control plane currently surfaces **{pkg_count}** package(s):",
+        f"Bio-Babel's read-only contract layer currently surfaces **{pkg_count}** package(s):",
         "",
     ]
     for cls in ("analysis", "grammar", "mixed"):

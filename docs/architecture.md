@@ -5,7 +5,7 @@
 
 ## TL;DR
 
-`biobabel` is a **control plane**. It runs no business logic itself. It connects two sides:
+`biobabel` is a **read-only contract layer**. It runs no business logic itself. It connects two sides:
 
 | Side | Who writes here | What they write |
 |------|-----------------|-----------------|

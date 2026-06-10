@@ -6,7 +6,7 @@ biobabel_version: 0.3.0
 
 # biobabel
 
-Bio-Babel's agent control plane surfaces schema-v1 packages installed in the current environment. Call `biobabel.list_packages()` and `biobabel.health()` for the live registry; this shipped skill does not assume which producer packages are installed.
+Bio-Babel's read-only contract layer surfaces schema-v1 packages installed in the current environment. Call `biobabel.list_packages()` and `biobabel.health()` for the live registry; this shipped skill does not assume which producer packages are installed.
 
 ## Decision tree
 

@@ -58,7 +58,7 @@ def test_mcp_tool_descriptions_are_short_and_static(registry):
 
 def test_no_network_imports_in_biobabel_src():
     """Threat: a contributor adds `import requests` to a biobabel module that
-    runs at MCP-server-time. Network access from inside the control plane is
+    runs at MCP-server-time. Network access from inside the contract layer is
     a hard line.
 
     Defense: this test grep-asserts our own code never imports network-issuing

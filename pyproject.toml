@@ -37,7 +37,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-verify = ["rpy2>=3.5", "Pillow", "scikit-image"]
 http   = ["uvicorn>=0.27", "starlette>=0.36"]
 # Upper bounds prevent a major-version bump of any of these tools from
 # silently breaking CI between commits. Bump the upper bound deliberately
@@ -74,7 +73,6 @@ include = ["src", "tests", "README.md", "AGENTS.md", "pyproject.toml"]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
 markers = [
-    "needs_rpy2: requires the optional rpy2 extra",
     "needs_grid_py: requires rgrid-python installed",
 ]
 
@@ -91,7 +89,3 @@ python_version = "3.10"
 strict = true
 warn_unused_ignores = true
 plugins = ["pydantic.mypy"]
-
-[[tool.mypy.overrides]]
-module = ["rpy2.*", "copier.*", "skimage.*"]
-ignore_missing_imports = true

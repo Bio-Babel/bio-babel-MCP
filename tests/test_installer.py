@@ -66,7 +66,6 @@ def test_cursor_writes_mcp_json_and_workspace_rule(ide_homes, tmp_path):
     rule = (ws / ".cursor" / "rules" / "biobabel.md").read_text()
     assert "biobabel.describe_concept" in rule
     assert "biobabel.scaffold" not in rule       # removed scaffolds
-    assert "biobabel.r_translate" not in rule    # removed R→Py translation
 
 
 def test_continue_writes_yaml_mcp_servers_list(ide_homes):

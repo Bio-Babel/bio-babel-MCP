@@ -31,7 +31,7 @@ from biobabel.manifest_api import PackageManifest
 console = Console()
 
 
-@click.group(help="biobabel — agent control plane for Bio-Babel.")
+@click.group(help="biobabel — read-only contract layer for Bio-Babel.")
 @click.version_option()
 def main_cli() -> None:
     pass
