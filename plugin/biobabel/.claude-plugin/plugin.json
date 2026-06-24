@@ -1,7 +1,7 @@
 {
   "name": "biobabel",
   "version": "0.1.0",
-  "description": "Bio-Babel agent consumption layer — lets agents discover exact schema-v1 contracts for Bio-Babel R-to-Python bioinformatics ports and validate snippets. Surfaces 15 read-only MCP tools, an R-paste detector hook, and per-package SKILL.md files.",
+  "description": "Bio-Babel agent consumption layer — lets agents discover exact schema-v1 contracts for Bio-Babel R-to-Python bioinformatics ports and validate snippets. Surfaces 12 read-only MCP tools, an R-paste detector hook, and per-package SKILL.md files.",
   "author": {
     "name": "Bio-Babel maintainers",
     "url": "https://github.com/Bio-Babel"

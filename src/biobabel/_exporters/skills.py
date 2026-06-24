@@ -14,11 +14,12 @@ biobabel_version: <biobabel.__version__>
 ---
 ```
 
-The `generated_from_registry_commit` field lets CI assert the skills are
-in sync with the contracts (final_plan §18.3 drift rule).
+The `generated_from_registry_commit` field lets a CI drift check assert the
+skills are in sync with the contracts by comparing it against the live
+manifest hash.
 
 In addition, a top-level `biobabel-overview/SKILL.md` is always emitted —
-hand-curated content explaining the 15 read-only MCP tools and the two-class framework.
+hand-curated content explaining the 12 read-only MCP tools and the two-class framework.
 """
 
 from __future__ import annotations
@@ -131,7 +132,7 @@ def _render_overview(registry: Registry) -> str:
     lines = [
         "---",
         "name: biobabel-overview",
-        "description: 15 read-only MCP tools for Bio-Babel — discover exact package contracts and validate snippets. Read this first when the user mentions an R bioinformatics package or a Bio-Babel name.",
+        "description: 12 read-only MCP tools for Bio-Babel — discover exact package contracts and validate snippets. Read this first when the user mentions an R bioinformatics package or a Bio-Babel name.",
         f"biobabel_version: {BIOBABEL_VERSION}",
         "---",
         "",

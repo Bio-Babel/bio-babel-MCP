@@ -4,8 +4,8 @@ half-filled `_biobabel/` directory, and additively patch pyproject.toml.
 Important: this is *scaffold-time* introspection (one-shot, output is YAML on
 disk for humans to review). It is **not** runtime reflection — biobabel still
 only reads the (then-edited) YAML at MCP-server-time. The hard constraint
-"no reflection fallback" (final_plan §0.4) refers to runtime; using inspect
-to *generate a stub for the human* is a legitimate dev tool.
+"no reflection fallback" applies at runtime; using inspect to *generate a stub
+for the human* is a legitimate dev tool.
 """
 
 from __future__ import annotations

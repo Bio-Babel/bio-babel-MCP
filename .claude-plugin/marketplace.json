@@ -6,13 +6,13 @@
   },
   "metadata": {
     "version": "0.1.0",
-    "description": "Marketplace hosting the biobabel Claude Code plugin — agent control plane for the Bio-Babel R-to-Python bioinformatics ecosystem."
+    "description": "Marketplace hosting the biobabel Claude Code plugin — read-only contract layer for the Bio-Babel R-to-Python bioinformatics ecosystem."
   },
   "plugins": [
     {
       "name": "biobabel",
       "source": "./plugin/biobabel",
-      "description": "Discover, plan, and use Bio-Babel R-to-Python ports via 23 MCP tools, 2 slash commands, an R-paste detector hook, and per-package SKILL.md files.",
+      "description": "Discover and use Bio-Babel R-to-Python ports via 12 read-only MCP tools, an R-paste detector hook, and per-package SKILL.md files.",
       "version": "0.1.0",
       "author": {
         "name": "Bio-Babel maintainers",
