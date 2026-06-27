@@ -46,10 +46,25 @@ def describe_package(registry: Registry, *, import_name: str) -> dict[str, Any]:
             error_code="not_found",
             message=f"no package registered under import name '{import_name}'",
         )
+    manifest = d.manifest.model_dump(mode="json")
+    # The full symbol contracts dominate the payload (hundreds of symbols, each with
+    # description/parameters/examples/failure_fixes/...). Return a lightweight symbol
+    # INDEX here and let the agent pull full detail on demand via describe_symbol.
+    # Concepts/idioms/anti_patterns are kept in full: they are the upfront "how-to"
+    # knowledge and have no drill-down tool of their own.
+    symbols = manifest.get("symbols") or []
+    manifest["symbols"] = [
+        {k: s[k] for k in ("id", "kind", "signature", "purpose") if s.get(k) is not None}
+        for s in symbols
+    ]
+    manifest["symbol_count"] = len(symbols)
     return success(
         "biobabel.describe_package",
-        summary=f"{d.manifest.display_name} ({d.manifest.contract_class})",
-        outputs={"manifest": d.manifest.model_dump(mode="json")},
+        summary=(
+            f"{d.manifest.display_name} ({d.manifest.contract_class}) — "
+            f"{len(symbols)} symbols (indexed; call describe_symbol(symbol_id) for full detail)"
+        ),
+        outputs={"manifest": manifest},
     )
 
 
