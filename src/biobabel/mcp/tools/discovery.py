@@ -88,10 +88,13 @@ def list_workflows(registry: Registry, *, package: str | None = None, task_tag: 
 def describe_workflow(registry: Registry, *, workflow_id: str) -> dict[str, Any]:
     hit = registry.workflow(workflow_id)
     if hit is None:
+        avail = [w.id for _, w in registry.list_workflows()][:12]
         return error(
             "biobabel.describe_workflow",
             error_code="not_found",
             message=f"no WorkflowContract with id '{workflow_id}'",
+            details={"available_workflow_ids": avail},
+            suggested_next_tools=["biobabel.describe_package"],
         )
     pkg, workflow = hit
     return success(
@@ -112,7 +115,13 @@ def list_symbols(
     """Find symbol contracts. With Tier-1 covering ~1.2k symbols, a bare list is
     a context bomb, so `query` does a case-insensitive substring match over
     id/signature/summary (the registry-lookup pattern) and `limit` caps the
-    rows. Narrow with `query=` before reading; use `describe_symbol` for one."""
+    rows. Narrow with `query=` before reading; use `describe_symbol` for one.
+    `kind` is one of class/function/constant; omit it (or pass 'all') for every kind."""
+    # 'all'/'any'/'*'/'' are natural "everything" values a model guesses, but the
+    # real kinds are class/function/constant — treat them as no filter rather than
+    # silently matching zero symbols.
+    if (kind or "").strip().lower() in ("", "all", "any", "*"):
+        kind = None
     q = (query or "").strip().lower()
     rows = []
     for pkg, symbol in registry.list_symbols(package=package):
@@ -136,16 +145,35 @@ def list_symbols(
     note = f"{total} symbol(s)"
     if total > len(rows):
         note += f"; showing {len(rows)} — narrow with query= or raise limit="
-    return success("biobabel.list_symbols", summary=note, outputs={"symbols": rows, "total": total})
+    warnings = []
+    if total == 0:
+        warnings.append(
+            "no symbols matched — check kind (class/function/constant), loosen "
+            "query=, or call describe_package(import_name=...) for the full symbol index."
+        )
+    return success(
+        "biobabel.list_symbols", summary=note,
+        outputs={"symbols": rows, "total": total}, warnings=warnings,
+    )
 
 
 def describe_symbol(registry: Registry, *, symbol_id: str) -> dict[str, Any]:
     hit = registry.symbol(symbol_id)
     if hit is None:
+        # Models often guess R/path-style separators ('pkg::Sym', 'pkg/Sym'); ids
+        # are dot-separated, so normalize and retry before giving up.
+        alt = symbol_id.replace("::", ".").replace("/", ".").replace(":", ".")
+        if alt != symbol_id:
+            hit = registry.symbol(alt)
+    if hit is None:
+        leaf = symbol_id.replace("::", ".").replace("/", ".").replace(":", ".").split(".")[-1].lower()
+        near = [s.id for _, s in registry.list_symbols() if leaf and leaf in s.id.lower()][:6]
         return error(
             "biobabel.describe_symbol",
             error_code="not_found",
             message=f"no SymbolContract with id '{symbol_id}'",
+            details={"hint": "symbol ids are dot-separated, e.g. 'ggplot2_py.Stat'", "suggestions": near},
+            suggested_next_tools=["biobabel.describe_package", "biobabel.list_symbols"],
         )
     pkg, symbol = hit
     return success(
