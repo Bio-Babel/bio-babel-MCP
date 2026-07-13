@@ -13,7 +13,7 @@
 | Run an analysis using a registered package | *"use monocle2py to compute pseudotime on this AnnData"* | exact symbol contracts, linear reference workflows, reusable templates, and static code checking |
 | Build new Python code on a foundation package | *"draw an N×N panel grid using grid_py"* | exact symbol contracts, concept invariants, idiom library, reusable templates, and AST-based anti-pattern detection |
 
-biobabel does **not** plan the analysis for the agent and does **not** execute code. The agent owns intent understanding, chooses a workflow, asks biobabel for precise package facts, writes complete code, and runs that code with its own tools.
+biobabel does **not** plan the analysis for the agent and does **not** execute code — it just provides accurate API guidance for the agent's coding.
 
 ## Install
 
@@ -30,6 +30,19 @@ For **Claude Code** — full plugin (MCP + hook + skills):
 /plugin marketplace add Bio-Babel/bio-babel
 /plugin install biobabel@bio-babel
 ```
+
+Or install from a local clone:
+
+```bash
+git clone https://github.com/Bio-Babel/bio-babel.git
+```
+
+```
+/plugin marketplace add ./bio-babel      # or an absolute path to the clone
+/plugin install biobabel@bio-babel
+```
+
+Since the clone is a git repo, `/plugin marketplace update` pulls later changes.
 
 For **Codex** — full plugin (MCP + hook + skills), via Codex's own plugin format
 (`plugin/biobabel-codex/`, marketplace manifest at `.agents/plugins/marketplace.json`):
@@ -48,9 +61,7 @@ biobabel uninstall --target cursor     # symmetric inverse; --dry-run to preview
 ```
 
 `--target codex` registers `biobabel-mcp` in `~/.codex/config.toml` under
-`[mcp_servers.biobabel]` (preserving your other Codex settings and comments);
-`--target all` now also wires Codex. Use the full plugin above instead if you
-also want the R-paste hook and the per-package skills.
+`[mcp_servers.biobabel]`, while preserving your other Codex settings.
 
 ## Register your own package into the ecosystem
 
